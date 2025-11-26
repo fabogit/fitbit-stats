@@ -1,0 +1,22 @@
+{
+  "author": "fabogit",
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "vite": "^7.2.4"
+  },
+  "description": "A Dashboard for Fitbit Personal Health Analytics",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [],
+  "license": "ISC",
+  "main": "index.js",
+  "name": "dashboard",
+  "packageManager": "pnpm@10.20.0",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "version": "1.0.0"
+}
