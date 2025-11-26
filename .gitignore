@@ -83,5 +83,9 @@ ehthumbs.db
 # Data folder
 /data/
 
-/dashboard/node_modules/
-/dashboard/dist/
+dashboard/node_modules/
+dashboard/dist/
+*.csv
+dashboard/dashboard_data.json
+.DS_Store
+Thumbs.db
