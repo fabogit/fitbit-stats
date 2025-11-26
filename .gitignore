@@ -86,6 +86,6 @@ ehthumbs.db
 dashboard/node_modules/
 dashboard/dist/
 *.csv
-dashboard/dashboard_data.json
+dashboard/public/dashboard_data.json
 .DS_Store
 Thumbs.db
