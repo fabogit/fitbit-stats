@@ -90,7 +90,7 @@ npm run dev
 
 #### 📸 Screenshots
 
-![Dashboard Preview](dashboard/dashboard.webp)
+![Dashboard Preview](dashboard.webp)
 
 ### Step 3: Static Plots (Optional)
 
