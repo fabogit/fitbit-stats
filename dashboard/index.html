@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fitbit Health Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1>🏃‍♂️ Personal Health Analytics</h1>
+      <p id="date-range">Loading data...</p>
+    </header>
+
+    <div class="kpi-grid">
+      <div class="card kpi">
+        <h3>Readiness</h3>
+        <div class="value" id="kpi-readiness">--</div>
+      </div>
+      <div class="card kpi">
+        <h3>RHR (Avg)</h3>
+        <div class="value" id="kpi-rhr">-- bpm</div>
+      </div>
+      <div class="card kpi">
+        <h3>Sleep Score (Avg)</h3>
+        <div class="value" id="kpi-sleep">--</div>
+      </div>
+      <div class="card kpi">
+        <h3>Calories (Avg)</h3>
+        <div class="value" id="kpi-cals">--</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="card full-width">
+        <h2>Health Trend: Readiness vs RHR</h2>
+        <div class="chart-container">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Weight vs Calories</h2>
+        <div class="chart-container">
+          <canvas id="weightChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Activity vs Sleep Quality</h2>
+        <div class="chart-container">
+          <canvas id="scatterChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+
+</html>
