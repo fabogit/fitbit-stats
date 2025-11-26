@@ -88,6 +88,10 @@ npm run dev
 
 > Click the link (e.g., `http://localhost:5173`) to open your dashboard in the browser.
 
+#### 📸 Screenshots
+
+![Dashboard Preview](dashboard/dashboard.webp)
+
 ### Step 3: Static Plots (Optional)
 
 Generate high-res PNG images in the `plots/` folder for reporting.
