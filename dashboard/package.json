@@ -5,6 +5,9 @@
     "vite": "^7.2.4"
   },
   "description": "A Dashboard for Fitbit Personal Health Analytics",
+  "devDependencies": {
+    "netlify-cli": "^23.12.3"
+  },
   "engines": {
     "node": ">=22.0.0"
   },
@@ -12,9 +15,9 @@
   "license": "ISC",
   "main": "index.js",
   "name": "dashboard",
-  "packageManager": "pnpm@10.20.0",
   "scripts": {
     "build": "vite build",
+    "deploy": "netlify deploy --prod --dir=dist",
     "dev": "vite",
     "preview": "vite preview"
   },

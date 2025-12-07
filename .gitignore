@@ -89,3 +89,5 @@ dashboard/dist/
 dashboard/public/dashboard_data.json
 .DS_Store
 Thumbs.db
+# Local Netlify folder
+dashboard/.netlify
