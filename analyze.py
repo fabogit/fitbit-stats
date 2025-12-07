@@ -12,7 +12,15 @@ DATA_DIR = "data"
 
 # Analysis timeframe
 START_DATE = "2024-04-01"
-END_DATE = "2025-11-25"
+END_DATE = "2025-12-01"
+
+# ==========================================
+# 1.1 USER METRICS (For BMR Calculation)
+# ==========================================
+# Mifflin-St Jeor Equation constants
+USER_HEIGHT_CM = 180   # Update with your height
+USER_AGE = 38          # Update with your age
+USER_GENDER = 'male'   # 'male' or 'female'
 
 # ==========================================
 # 2. HELPER FUNCTIONS
@@ -121,10 +129,10 @@ def parse_resting_heart_rate(file_path):
     df.set_index('date', inplace=True)
     return df
 
-
 def parse_weight(file_path):
     """
     Parser for 'weight-*.json'.
+    NOTE: Fitbit often exports in LBS. We convert to KG immediately.
     """
     with open(file_path, 'r') as f:
         data = json.load(f)
@@ -133,14 +141,22 @@ def parse_weight(file_path):
     if df.empty:
         return None
 
+    # Keep necessary columns
     df = df[['date', 'weight', 'bmi']]
+
+    # === CONVERSION: LBS -> KG ===
+    # Assume raw data is in pounds if the value is > 100 with a normal BMI.
+    # (Or always apply if you're sure the export is in pounds.)
+    df['weight'] = df['weight'] * 0.453592
+    df['weight'] = df['weight'].round(1)
+    # ==============================
+
     df['date'] = pd.to_datetime(df['date'], format='%m/%d/%y')
     df.set_index('date', inplace=True)
 
     # Deduplicate: keep first reading of the day
     df = df[~df.index.duplicated(keep='first')]
     return df
-
 
 def parse_sleep_score_csv(file_path):
     """
@@ -276,6 +292,52 @@ def calculate_readiness(df):
     return df
 
 
+def calculate_metabolic_metrics(df):
+    """
+    Calculates metabolic stats: BMR, Active Calories, and Intensity Index.
+    Uses Mifflin-St Jeor Equation for BMR.
+    """
+    # 1. Handle missing weights for daily BMR calculation
+    # We forward-fill (use yesterday's weight) then backward-fill (for start of data)
+    if 'weight' in df.columns:
+        df['weight_filled'] = df['weight'].ffill().bfill()
+    else:
+        # Fallback if no weight data exists at all (use a default value)
+        df['weight_filled'] = 79.0
+
+    # 2. Calculate BMR (Basal Metabolic Rate)
+    # Formula: (10 * weight) + (6.25 * height) - (5 * age) + s
+    # s is +5 for males, -161 for females
+    s = 5 if USER_GENDER == 'male' else -161
+
+    df['bmr'] = (10 * df['weight_filled']) + (6.25 * USER_HEIGHT_CM) - (5 * USER_AGE) + s
+
+    # 3. Calculate Active Calories
+    # Active = Total Burned - BMR
+    # Clip at 0 to prevent negative numbers if data is weird
+    df['active_calories'] = (df['calories_total'] - df['bmr']).clip(lower=0)
+
+    # 4. Calculate Intensity Index (Calories / Active Minute)
+    # First, ensure we have all columns to avoid KeyErrors
+    cols = ['lightly_active_minutes', 'moderately_active_minutes', 'very_active_minutes']
+    for col in cols:
+        if col not in df.columns: df[col] = 0.0
+
+    df['total_active_minutes'] = (
+        df['lightly_active_minutes'] +
+        df['moderately_active_minutes'] +
+        df['very_active_minutes']
+    )
+
+    # Calculate index (handle division by zero)
+    df['intensity_index'] = df.apply(
+        lambda row: row['active_calories'] / row['total_active_minutes']
+        if row['total_active_minutes'] > 0 else 0, axis=1
+    )
+
+    return df
+
+
 def merge_all_data():
     """
     Orchestrates loading all metrics and merging them into a Master DataFrame.
@@ -283,19 +345,17 @@ def merge_all_data():
     print(f"\n=== BUILDING MASTER DATASET ({START_DATE} to {END_DATE}) ===")
 
     datasets = [
-        load_collection("Global Export Data",
-                        "resting_heart_rate-*.json", parse_resting_heart_rate),
+        load_collection("Global Export Data", "resting_heart_rate-*.json", parse_resting_heart_rate),
         load_collection("Global Export Data", "weight-*.json", parse_weight),
-        load_collection("Global Export Data", "calories-*.json",
-                        parse_calories_intraday),
-        load_collection("Sleep Score", "sleep_score.csv",
-                        parse_sleep_score_csv),
-        load_collection("Oxygen Saturation (SpO2)",
-                        "Daily SpO2 - *.csv", parse_spo2_csv),
-        load_collection("Global Export Data",
-                        "very_active_minutes-*.json", parse_simple_activity_json),
-        load_collection("Global Export Data",
-                        "sedentary_minutes-*.json", parse_simple_activity_json),
+        load_collection("Global Export Data", "calories-*.json", parse_calories_intraday),
+        load_collection("Sleep Score", "sleep_score.csv", parse_sleep_score_csv),
+        load_collection("Oxygen Saturation (SpO2)", "Daily SpO2 - *.csv", parse_spo2_csv),
+
+        # Activity Minutes (All Zones)
+        load_collection("Global Export Data", "very_active_minutes-*.json", parse_simple_activity_json),
+        load_collection("Global Export Data", "moderately_active_minutes-*.json", parse_simple_activity_json),
+        load_collection("Global Export Data", "lightly_active_minutes-*.json", parse_simple_activity_json),
+        load_collection("Global Export Data", "sedentary_minutes-*.json", parse_simple_activity_json),
     ]
 
     # Filter out empty loads
@@ -308,44 +368,46 @@ def merge_all_data():
     # Merge
     master_df = datasets[0]
     for i in range(1, len(datasets)):
-        # Check if dataset has duplicates before joining
         current_df = datasets[i]
+        # Safety check for duplicates in chunk
         if current_df.index.duplicated().any():
-            print(
-                f"Warning: Found duplicates in dataset {i}, aggregating by mean.")
             current_df = current_df.groupby(current_df.index).mean()
-
         master_df = master_df.join(current_df, how='outer')
 
     # Filter Date Range
     master_df = filter_by_date(master_df)
 
-    # Fill NaNs
-    cols_zero_fill = ['very_active_minutes',
-                      'sedentary_minutes', 'calories_total']
+    # Fill NaNs for activity metrics (logical 0)
+    cols_zero_fill = [
+        'very_active_minutes', 'moderately_active_minutes',
+        'lightly_active_minutes', 'sedentary_minutes',
+        'calories_total'
+    ]
     for c in cols_zero_fill:
         if c in master_df.columns:
             master_df[c] = master_df[c].fillna(0)
 
-    # ===  DEDUPLICATE MASTER INDEX ===
+    # Final Deduplication
     if master_df.index.duplicated().any():
         print("Resolving final index duplicates via Mean...")
         master_df = master_df.groupby(master_df.index).mean()
 
-    print(
-        f"-> Master Dataset created with {master_df.shape[0]} days and {master_df.shape[1]} columns.")
+    print(f"-> Master Dataset created with {master_df.shape[0]} days and {master_df.shape[1]} columns.")
     return master_df
 
 
 def export_to_json(df):
     """
     Exports the Master DataFrame to a JSON file for the dashboard.
+    SAVES TO dashboard/public/ so Vite can serve it properly.
     """
-    output_path = os.path.join("dashboard", "dashboard_data.json")
+    output_dir = os.path.join("dashboard", "public")
+    output_path = os.path.join(output_dir, "dashboard_data.json")
+
 
     # Create dashboard folder if not exists
-    if not os.path.exists("dashboard"):
-        os.makedirs("dashboard")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
     # Reset index to make 'date' a column, then format it as string (YYYY-MM-DD)
     # This makes it easier for JS to read
@@ -365,13 +427,13 @@ if __name__ == "__main__":
     df = merge_all_data()
 
     if df is not None:
-        # 2. Calculate Derived Metrics
+        # 2. Calculate Metrics
         df = calculate_readiness(df)
+        df = calculate_metabolic_metrics(df)
 
         # 3. Display Results (Console)
         print("\n=== ANALYSIS RESULT HEAD ===")
-        print(df[['resting_bpm', 'overall_score',
-              'readiness_raw', 'calories_total']].head())
+        print(df[['resting_bpm', 'readiness_raw', 'bmr', 'active_calories', 'intensity_index']].head())
 
         # 4. Save to CSV (Archive)
         df.to_csv("fitbit_analysis.csv")

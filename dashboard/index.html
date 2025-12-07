@@ -11,46 +11,169 @@
 <body>
   <div class="container">
     <header>
-      <h1>🏃‍♂️ Personal Health Analytics</h1>
-      <p id="date-range">Loading data...</p>
+      <div class="header-content">
+        <div>
+          <h1>🏃‍♂️ Personal Health Analytics</h1>
+          <p id="data-status">Loading data...</p>
+        </div>
+        <div class="controls">
+          <label>
+            From: <input type="date" id="start-date">
+          </label>
+          <label>
+            To: <input type="date" id="end-date">
+          </label>
+          <button id="reset-btn">Reset</button>
+        </div>
+      </div>
     </header>
 
     <div class="kpi-grid">
+
       <div class="card kpi">
-        <h3>Readiness</h3>
+        <div class="card-header">
+          <h3>Readiness</h3>
+          <div class="tooltip-container">
+            <span class="info-icon">ⓘ</span>
+            <div class="tooltip-text">
+              <strong>Z-Score Metric</strong><br>
+              Combines Sleep quality and RHR.<br>
+              • <strong>&gt; 1.0</strong>: Peak Condition (Train Hard)<br>
+              • <strong>0.0</strong>: Your Average<br>
+              • <strong>&lt; -1.0</strong>: Stressed (Focus on Recovery)
+            </div>
+          </div>
+        </div>
         <div class="value" id="kpi-readiness">--</div>
       </div>
+
       <div class="card kpi">
-        <h3>RHR (Avg)</h3>
+        <div class="card-header">
+          <h3>RHR (Avg)</h3>
+          <div class="tooltip-container">
+            <span class="info-icon">ⓘ</span>
+            <div class="tooltip-text">
+              <strong>Resting Heart Rate</strong><br>
+              A lower RHR generally indicates better cardiovascular fitness.<br>
+              Spikes may indicate stress, illness, or overtraining.
+            </div>
+          </div>
+        </div>
         <div class="value" id="kpi-rhr">-- bpm</div>
       </div>
+
       <div class="card kpi">
-        <h3>Sleep Score (Avg)</h3>
+        <div class="card-header">
+          <h3>Sleep Score</h3>
+          <div class="tooltip-container">
+            <span class="info-icon">ⓘ</span>
+            <div class="tooltip-text">
+              <strong>Fitbit Quality Score (0-100)</strong><br>
+              Based on duration, deep/REM phases, and restoration.<br>
+              • <strong>&gt; 80</strong>: Good<br>
+              • <strong>&gt; 90</strong>: Excellent
+            </div>
+          </div>
+        </div>
         <div class="value" id="kpi-sleep">--</div>
       </div>
+
       <div class="card kpi">
-        <h3>Calories (Avg)</h3>
+        <div class="card-header">
+          <h3>Calories</h3>
+          <div class="tooltip-container">
+            <span class="info-icon">ⓘ</span>
+            <div class="tooltip-text">
+              <strong>Total Daily Expenditure</strong><br>
+              Sum of your Basal Metabolic Rate (BMR) plus calories burned from activity.<br>
+              Higher values indicate higher activity levels.
+            </div>
+          </div>
+        </div>
         <div class="value" id="kpi-cals">--</div>
       </div>
+
     </div>
 
     <div class="charts-grid">
+
       <div class="card full-width">
-        <h2>Health Trend: Readiness vs RHR</h2>
+        <div class="card-header">
+          <h2>Health Trend: Readiness vs RHR</h2>
+          <div class="tooltip-container">
+            <span class="info-icon">ⓘ</span>
+            <div class="tooltip-text">
+              Comparison between your daily Recovery score (Blue) and Resting Heart Rate (Red).<br>
+              Ideally, when RHR drops, Readiness goes up.
+            </div>
+          </div>
+        </div>
         <div class="chart-container">
           <canvas id="trendChart"></canvas>
         </div>
       </div>
 
       <div class="card">
-        <h2>Weight vs Calories</h2>
+        <div class="card-header">
+          <h2>Daily Energy: BMR vs Active</h2>
+          <div class="tooltip-container">
+            <span class="info-icon">ⓘ</span>
+            <div class="tooltip-text">
+              <strong>Grey (BMR):</strong> Calories burned at rest based on your weight/age.<br>
+              <strong>Orange (Active):</strong> Calories burned through movement and exercise.
+            </div>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="calStackChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Activity Zones Distribution</h2>
+          <div class="tooltip-container">
+            <span class="info-icon">ⓘ</span>
+            <div class="tooltip-text">
+              Total minutes spent in each intensity zone for the selected period.<br>
+              High "Sedentary" time can offset workout benefits.
+            </div>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="zonesChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Weight vs Calories</h2>
+          <div class="tooltip-container">
+            <span class="info-icon">ⓘ</span>
+            <div class="tooltip-text">
+              Correlates body weight (Yellow) with energy expenditure (Orange).<br>
+              Look for lagged trends where high calorie burn leads to weight drop.
+            </div>
+          </div>
+        </div>
         <div class="chart-container">
           <canvas id="weightChart"></canvas>
         </div>
       </div>
 
       <div class="card">
-        <h2>Activity vs Sleep Quality</h2>
+        <div class="card-header">
+          <h2>Activity vs Sleep Quality</h2>
+          <div class="tooltip-container">
+            <span class="info-icon">ⓘ</span>
+            <div class="tooltip-text">
+              Each dot is a day.<br>
+              X-Axis: Calories Burned<br>
+              Y-Axis: Sleep Score<br>
+              A trend upwards means exercise helps you sleep better.
+            </div>
+          </div>
+        </div>
         <div class="chart-container">
           <canvas id="scatterChart"></canvas>
         </div>
