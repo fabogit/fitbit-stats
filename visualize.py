@@ -51,7 +51,7 @@ def plot_weight_vs_calories_trend(df):
     # Left Axis: Weight
     color = 'black'
     ax1.set_xlabel('Date')
-    ax1.set_ylabel('Weight (Lbs)', color=color)
+    ax1.set_ylabel('Weight (Kg)', color=color)
     ax1.plot(df_weight.index, df_weight['weight'], color=color,
              marker='o', markersize=3, linestyle='-', alpha=0.7, label='Weight')
     ax1.tick_params(axis='y', labelcolor=color)
@@ -124,7 +124,7 @@ def plot_weight_vs_rhr_scatter(df):
                 scatter=False, color='red', line_kws={'alpha': 0.5})
 
     plt.title('Correlation: Weight vs Resting Heart Rate')
-    plt.xlabel('Weight (Lbs)')
+    plt.xlabel('Weight (Kg)')
     plt.ylabel('RHR (bpm)')
     plt.legend(title='Month', bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()

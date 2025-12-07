@@ -6,6 +6,7 @@
   --accent: #3498db;
   --success: #2ecc71;
   --danger: #e74c3c;
+  --input-bg: #383838;
 }
 
 body {
@@ -17,12 +18,20 @@ body {
 }
 
 .container {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 
 header {
   margin-bottom: 30px;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 20px;
 }
 
 h1 {
@@ -33,6 +42,45 @@ h1 {
 p {
   color: var(--text-secondary);
   margin-top: 5px;
+}
+
+/* Controls */
+.controls {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  background: var(--card-bg);
+  padding: 10px 15px;
+  border-radius: 8px;
+}
+
+.controls label {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.controls input {
+  background: var(--input-bg);
+  border: 1px solid #444;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  margin-left: 5px;
+  font-family: inherit;
+}
+
+button#reset-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+button#reset-btn:hover {
+  opacity: 0.9;
 }
 
 /* Grid Layouts */
@@ -85,4 +133,72 @@ p {
 canvas {
   width: 100% !important;
   height: 100% !important;
+}
+
+/* Tooltips */
+.card-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.card-header h2,
+.card-header h3 {
+  margin: 0;
+  display: inline-block;
+}
+
+.tooltip-container {
+  position: relative;
+  display: inline-flex;
+  margin-left: 8px;
+  cursor: help;
+}
+
+.info-icon {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  transition: color 0.2s;
+}
+
+.tooltip-container:hover .info-icon {
+  color: var(--accent);
+}
+
+.tooltip-text {
+  visibility: hidden;
+  width: 250px;
+  background-color: #333;
+  color: #fff;
+  text-align: left;
+  border-radius: 6px;
+  padding: 10px;
+  position: absolute;
+  z-index: 10;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  border: 1px solid #555;
+  pointer-events: none;
+}
+
+.tooltip-text::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #333 transparent transparent transparent;
+}
+
+.tooltip-container:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
 }
