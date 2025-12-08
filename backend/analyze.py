@@ -398,12 +398,11 @@ def merge_all_data():
 
 def export_to_json(df):
     """
-    Exports the Master DataFrame to a JSON file for the dashboard.
-    SAVES TO dashboard/public/ so Vite can serve it properly.
+    Exports the Master DataFrame to a JSON file for the React App.
+    Path: ../client/public/dashboard_data.json (Relative to backend/)
     """
-    output_dir = os.path.join("dashboard", "public")
+    output_dir = os.path.join("..", "client", "public")
     output_path = os.path.join(output_dir, "dashboard_data.json")
-
 
     # Create dashboard folder if not exists
     if not os.path.exists(output_dir):
