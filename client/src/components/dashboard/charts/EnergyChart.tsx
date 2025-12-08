@@ -9,15 +9,28 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAppSelector } from "@/store";
+import { InfoTooltip } from "@/components/ui/InfoTooltip"; // <--- Import
 
 export function EnergyChart() {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
-      <h3 className="text-lg font-semibold text-slate-100 mb-4">
-        Daily Energy
-      </h3>
+      <div className="flex items-center mb-4">
+        <h3 className="text-lg font-semibold text-slate-100">Daily Energy</h3>
+        <InfoTooltip
+          content={
+            <span>
+              <strong>BMR (Grey):</strong> Calories burned at rest based on your
+              stats.
+              <br />
+              <strong className="text-amber-500">Active (Orange):</strong>{" "}
+              Calories burned purely through movement and exercise.
+            </span>
+          }
+        />
+      </div>
+
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={filteredData}>

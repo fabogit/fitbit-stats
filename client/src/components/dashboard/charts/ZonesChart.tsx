@@ -8,6 +8,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAppSelector } from "@/store";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 const COLORS = ["#334155", "#eab308", "#f97316", "#ef4444"]; // Slate, Yellow, Orange, Red
 
@@ -25,23 +26,32 @@ export function ZonesChart() {
       { sedentary: 0, light: 0, moderate: 0, very: 0 }
     );
 
-    const data = [
+    return [
       { name: "Sedentary", value: totals.sedentary },
       { name: "Light", value: totals.light },
       { name: "Moderate", value: totals.moderate },
       { name: "Very Active", value: totals.very },
     ];
-
-    return data;
   }, [filteredData]);
 
   const totalMinutes = chartData.reduce((acc, curr) => acc + curr.value, 0);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm flex flex-col h-full">
-      <h3 className="text-lg font-semibold text-slate-100 mb-2">
-        Activity Zones
-      </h3>
+      <div className="flex items-center mb-4">
+        <h3 className="text-lg font-semibold text-slate-100">Activity Zones</h3>
+        <InfoTooltip
+          content={
+            <span>
+              Total minutes spent in each intensity zone for the selected
+              period.
+              <br />
+              <strong className="text-indigo-400">Insight:</strong> High
+              "Sedentary" time can offset workout benefits.
+            </span>
+          }
+        />
+      </div>
 
       <div className="flex-1 min-h-[300px] w-full flex items-center justify-center">
         {totalMinutes > 0 ? (

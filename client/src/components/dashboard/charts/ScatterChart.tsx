@@ -8,6 +8,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAppSelector } from "@/store";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -42,9 +43,26 @@ export function ScatterChart() {
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
-      <h3 className="text-lg font-semibold text-slate-100 mb-4">
-        Correlation: Activity vs Sleep
-      </h3>
+      <div className="flex items-center mb-4">
+        <h3 className="text-lg font-semibold text-slate-100">
+          Correlation: Activity vs Sleep
+        </h3>
+        <InfoTooltip
+          content={
+            <span>
+              Each dot represents a single day.
+              <br />
+              <strong>X-Axis:</strong> Calories Burned
+              <br />
+              <strong>Y-Axis:</strong> Sleep Score
+              <br />
+              <span className="text-indigo-400">Insight:</span> Check if higher
+              activity days lead to better sleep scores (upward trend).
+            </span>
+          }
+        />
+      </div>
+
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ReScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
