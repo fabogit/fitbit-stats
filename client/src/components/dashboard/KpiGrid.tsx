@@ -6,6 +6,7 @@ import {
   getLastValidMetric,
 } from "@/lib/analytics";
 import { TrendingUp, Activity, Moon, Zap } from "lucide-react";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 // --- Type Definitions ---
 interface KpiCardProps {
@@ -13,6 +14,7 @@ interface KpiCardProps {
   value: string | number;
   icon: ReactNode;
   colorClass?: string;
+  tooltipContent?: ReactNode;
 }
 
 // --- Main Component ---
@@ -41,21 +43,56 @@ export function KpiGrid() {
         value={formatNumber(currentReadiness, 2)}
         icon={<Zap className="w-4 h-4 text-yellow-500" />}
         colorClass={getReadinessColor(currentReadiness)}
+        tooltipContent={
+          <span>
+            <strong>Z-Score Metric</strong>
+            <br />
+            Combines Sleep quality and RHR.
+            <br />• <strong className="text-emerald-400">&gt; 1.0</strong>: Peak
+            Condition
+            <br />• <strong>0.0</strong>: Average
+            <br />• <strong className="text-rose-400">&lt; -1.0</strong>:
+            Stressed
+          </span>
+        }
       />
       <KpiCard
         title="Avg RHR"
         value={`${avgRHR} bpm`}
         icon={<Activity className="w-4 h-4 text-rose-500" />}
+        tooltipContent={
+          <span>
+            <strong>Resting Heart Rate</strong>
+            <br />
+            Lower is generally better.
+            <br />
+            Spikes usually indicate stress, illness, or overtraining.
+          </span>
+        }
       />
       <KpiCard
         title="Avg Sleep"
         value={avgSleep}
         icon={<Moon className="w-4 h-4 text-indigo-400" />}
+        tooltipContent={
+          <span>
+            <strong>Sleep Score (0-100)</strong>
+            <br />• <strong>&gt; 80</strong>: Good
+            <br />• <strong>&gt; 90</strong>: Excellent
+          </span>
+        }
       />
       <KpiCard
         title="Avg Calories"
         value={parseInt(avgCals).toLocaleString()}
         icon={<TrendingUp className="w-4 h-4 text-orange-500" />}
+        tooltipContent={
+          <span>
+            <strong>Total Daily Expenditure</strong>
+            <br />
+            Sum of BMR (Base) + Active Calories.
+          </span>
+        }
       />
     </div>
   );
@@ -67,13 +104,17 @@ function KpiCard({
   value,
   icon,
   colorClass = "text-slate-50",
+  tooltipContent,
 }: KpiCardProps) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm transition-all hover:border-slate-700">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-          {title}
-        </h3>
+        <div className="flex items-center">
+          <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+            {title}
+          </h3>
+          {tooltipContent && <InfoTooltip content={tooltipContent} />}
+        </div>
         {icon}
       </div>
       <div className={`text-2xl font-bold ${colorClass}`}>{value}</div>

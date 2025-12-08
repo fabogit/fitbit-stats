@@ -4,6 +4,7 @@ import {
   type PayloadAction,
 } from "@reduxjs/toolkit";
 import type { HealthRecord, DateRange } from "@/types/health";
+import { subMonths, parseISO, format } from "date-fns";
 
 interface DashboardState {
   data: HealthRecord[];
@@ -25,11 +26,8 @@ export const fetchHealthData = createAsyncThunk(
   "dashboard/fetchHealthData",
   async () => {
     const response = await fetch("/dashboard_data.json");
-    if (!response.ok) {
-      throw new Error("Failed to load dashboard data");
-    }
-    const data = await response.json();
-    return data as HealthRecord[];
+    if (!response.ok) throw new Error("Failed to load dashboard data");
+    return (await response.json()) as HealthRecord[];
   }
 );
 
@@ -62,10 +60,23 @@ const dashboardSlice = createSlice({
         state.data = action.payload;
 
         if (action.payload.length > 0) {
-          const start = action.payload[0].date;
-          const end = action.payload[action.payload.length - 1].date;
-          state.dateRange = { start, end };
-          state.filteredData = action.payload;
+          const lastRecord = action.payload[action.payload.length - 1];
+          const firstRecord = action.payload[0];
+
+          const endDate = lastRecord.date;
+
+          const endObj = parseISO(endDate);
+          const startObj = subMonths(endObj, 3);
+          let startDate = format(startObj, "yyyy-MM-dd");
+
+          if (startDate < firstRecord.date) {
+            startDate = firstRecord.date;
+          }
+
+          state.dateRange = { start: startDate, end: endDate };
+          state.filteredData = action.payload.filter(
+            (d) => d.date >= startDate && d.date <= endDate
+          );
         }
       })
       .addCase(fetchHealthData.rejected, (state, action) => {

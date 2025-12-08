@@ -9,15 +9,31 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAppSelector } from "@/store";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 export function TrendChart() {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
-      <h3 className="text-lg font-semibold text-slate-100 mb-4">
-        Health Trend
-      </h3>
+      <div className="flex items-center mb-4">
+        <h3 className="text-lg font-semibold text-slate-100">Health Trend</h3>
+        <InfoTooltip
+          content={
+            <span>
+              Comparison between your daily{" "}
+              <strong className="text-blue-400">Readiness</strong> (Blue) and{" "}
+              <strong className="text-rose-500">Resting Heart Rate</strong>{" "}
+              (Red).
+              <br />
+              <span className="text-slate-400">Insight:</span> Ideally, when RHR
+              drops, Readiness goes up. A spike in RHR often signals stress or
+              illness.
+            </span>
+          }
+        />
+      </div>
+
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={filteredData}>

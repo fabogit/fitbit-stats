@@ -10,15 +10,35 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAppSelector } from "@/store";
+import { InfoTooltip } from "@/components/ui/InfoTooltip"; // <--- Import
 
 export function WeightChart() {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
-      <h3 className="text-lg font-semibold text-slate-100 mb-4">
-        Weight vs Calories
-      </h3>
+      {/* Header con Tooltip */}
+      <div className="flex items-center mb-4">
+        <h3 className="text-lg font-semibold text-slate-100">
+          Weight vs Calories
+        </h3>
+        <InfoTooltip
+          content={
+            <span>
+              Correlates{" "}
+              <strong className="text-yellow-400">Body Weight</strong> (Line)
+              with{" "}
+              <strong className="text-orange-400">Energy Expenditure</strong>{" "}
+              (Area).
+              <br />
+              <span className="text-slate-400">Insight:</span> Look for lagged
+              trends where sustained high calorie burn leads to a drop in weight
+              over time.
+            </span>
+          }
+        />
+      </div>
+
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={filteredData}>
@@ -53,7 +73,7 @@ export function WeightChart() {
               }}
               labelStyle={{ color: "#94a3b8" }}
             />
-            <Legend />
+            <Legend wrapperStyle={{ paddingTop: "10px" }} />
 
             <Area
               yAxisId="right"
