@@ -11,8 +11,8 @@ import pandas as pd
 DATA_DIR = "data"
 
 # Analysis timeframe
-START_DATE = "2024-04-01"
-END_DATE = "2025-12-01"
+START_DATE = "2024-01-01"
+END_DATE = "2026-01-01"
 
 # ==========================================
 # 1.1 USER METRICS (For BMR Calculation)
