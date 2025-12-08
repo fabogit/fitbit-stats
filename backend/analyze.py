@@ -11,8 +11,8 @@ import pandas as pd
 DATA_DIR = "data"
 
 # Analysis timeframe
-START_DATE = "2024-01-01"
-END_DATE = "2026-01-01"
+START_DATE = "2024-04-01"
+END_DATE = None
 
 # ==========================================
 # 1.1 USER METRICS (For BMR Calculation)
@@ -29,7 +29,7 @@ USER_GENDER = 'male'   # 'male' or 'female'
 
 def filter_by_date(df):
     """
-    Filters the DataFrame based on the global START_DATE and END_DATE.
+    Filters the DataFrame based on START_DATE and optionally END_DATE.
     Expects the DataFrame to have a DateTimeIndex.
     """
     if df is None or df.empty:
@@ -43,8 +43,12 @@ def filter_by_date(df):
             print(f"Error converting index to datetime: {e}")
             return df
 
-    # Filter range
-    mask = (df.index >= START_DATE) & (df.index <= END_DATE)
+    # Logic: Start Date is mandatory, End Date is optional
+    if END_DATE:
+        mask = (df.index >= START_DATE) & (df.index <= END_DATE)
+    else:
+        mask = (df.index >= START_DATE)
+
     return df.loc[mask]
 
 
@@ -391,6 +395,13 @@ def merge_all_data():
     if master_df.index.duplicated().any():
         print("Resolving final index duplicates via Mean...")
         master_df = master_df.groupby(master_df.index).mean()
+
+    if 'calories_total' in master_df.columns:
+        initial_rows = len(master_df)
+        master_df = master_df[master_df['calories_total'] > 0]
+        dropped = initial_rows - len(master_df)
+        if dropped > 0:
+            print(f"   -> Cleaned {dropped} empty/future rows based on 0 calories.")
 
     print(f"-> Master Dataset created with {master_df.shape[0]} days and {master_df.shape[1]} columns.")
     return master_df
