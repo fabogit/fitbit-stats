@@ -54,7 +54,7 @@ yarn-error.log*
 # PROJECT SPECIFIC (Privacy)
 # ==========================
 
-backend/data/
+server/data/
 
 *.csv
 dashboard_data.json
