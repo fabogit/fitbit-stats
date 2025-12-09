@@ -11,7 +11,11 @@ import {
 import { useAppSelector } from "@/store";
 import { InfoTooltip } from "@/components/ui/InfoTooltip"; // <--- Import
 
-export function EnergyChart() {
+interface EnergyChartProps {
+  syncId?: string;
+}
+
+export function EnergyChart({ syncId }: EnergyChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
   return (
@@ -33,7 +37,7 @@ export function EnergyChart() {
 
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={filteredData}>
+          <BarChart data={filteredData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="#334155"

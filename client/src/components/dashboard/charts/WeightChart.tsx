@@ -12,7 +12,11 @@ import {
 import { useAppSelector } from "@/store";
 import { InfoTooltip } from "@/components/ui/InfoTooltip"; // <--- Import
 
-export function WeightChart() {
+interface WeightChartProps {
+  syncId?: string;
+}
+
+export function WeightChart({ syncId }: WeightChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
   return (
@@ -41,7 +45,7 @@ export function WeightChart() {
 
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={filteredData}>
+          <ComposedChart data={filteredData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="#334155"
