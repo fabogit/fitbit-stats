@@ -11,7 +11,11 @@ import {
 import { useAppSelector } from "@/store";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
-export function TrendChart() {
+interface TrendChartProps {
+  syncId?: string;
+}
+
+export function TrendChart({ syncId }: TrendChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
   return (
@@ -36,7 +40,7 @@ export function TrendChart() {
 
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={filteredData}>
+          <LineChart data={filteredData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="#334155"

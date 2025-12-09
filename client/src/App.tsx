@@ -3,13 +3,9 @@ import { useAppDispatch, useAppSelector } from "./store";
 import { fetchHealthData } from "./features/dashboard/dashboardSlice";
 import { Header } from "./components/dashboard/Header";
 import { KpiGrid } from "./components/dashboard/KpiGrid";
-
-// Charts
-import { TrendChart } from "./components/dashboard/charts/TrendChart";
-import { EnergyChart } from "./components/dashboard/charts/EnergyChart";
-import { ZonesChart } from "./components/dashboard/charts/ZonesChart";
-import { WeightChart } from "./components/dashboard/charts/WeightChart";
-import { ScatterChart } from "./components/dashboard/charts/ScatterChart";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TimelineView } from "./components/dashboard/views/TimelineView";
+import { AnalyticsView } from "./components/dashboard/views/AnalyticsView";
 
 function App() {
   const dispatch = useAppDispatch();
@@ -19,51 +15,42 @@ function App() {
     dispatch(fetchHealthData());
   }, [dispatch]);
 
-  if (status === "loading") {
+  if (status === "loading")
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
+        Loading...
       </div>
     );
-  }
-
-  if (status === "failed") {
+  if (status === "failed")
     return (
       <div className="min-h-screen bg-slate-950 p-10 text-red-500">
-        Critical Error: {error}
+        Error: {error}
       </div>
     );
-  }
 
   return (
     <div className="min-h-screen bg-slate-950 p-4 md:p-8 text-slate-50">
       <div className="max-w-7xl mx-auto space-y-6">
         <Header />
-
         <KpiGrid />
 
-        {/* Row 1: Main Trends */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <TrendChart />
-          <EnergyChart />
-        </div>
-
-        {/* Row 2: Secondary Analysis */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Zones chart is smaller, maybe give it 1 column */}
-          <div className="lg:col-span-1">
-            <ZonesChart />
+        {/* TABS NAVIGATION */}
+        <Tabs defaultValue="timeline" className="w-full">
+          <div className="flex justify-center mb-6">
+            <TabsList className="bg-slate-900 border border-slate-800">
+              <TabsTrigger value="timeline">Timeline (Daily)</TabsTrigger>
+              <TabsTrigger value="analytics">Analytics (Insights)</TabsTrigger>
+            </TabsList>
           </div>
-          {/* Weight chart takes more space */}
-          <div className="lg:col-span-2">
-            <WeightChart />
-          </div>
-        </div>
 
-        {/* Row 3: Correlations */}
-        <div className="grid grid-cols-1">
-          <ScatterChart />
-        </div>
+          <TabsContent value="timeline">
+            <TimelineView />
+          </TabsContent>
+
+          <TabsContent value="analytics">
+            <AnalyticsView />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
