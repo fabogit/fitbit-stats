@@ -1,57 +1,83 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAppDispatch, useAppSelector } from "./store";
 import { fetchHealthData } from "./features/dashboard/dashboardSlice";
-import { Header } from "./components/dashboard/Header";
-import { KpiGrid } from "./components/dashboard/KpiGrid";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sidebar } from "./components/dashboard/Sidebar";
+import { OverviewView } from "./components/dashboard/views/OverviewView";
 import { TimelineView } from "./components/dashboard/views/TimelineView";
 import { AnalyticsView } from "./components/dashboard/views/AnalyticsView";
+import { PanelLeftOpen } from "lucide-react"; // Icona solo per APRIRE
+import { cn } from "@/lib/utils";
 
 function App() {
   const dispatch = useAppDispatch();
   const { status, error } = useAppSelector((state) => state.dashboard);
 
+  const [activeTab, setActiveTab] = useState("overview");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
   useEffect(() => {
     dispatch(fetchHealthData());
   }, [dispatch]);
 
-  if (status === "loading")
+  if (status === "loading") {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
-        Loading...
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
       </div>
     );
-  if (status === "failed")
+  }
+
+  if (status === "failed") {
     return (
       <div className="min-h-screen bg-slate-950 p-10 text-red-500">
-        Error: {error}
+        Critical Error: {error}
       </div>
     );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-8 text-slate-50">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <Header />
-        <KpiGrid />
-
-        {/* TABS NAVIGATION */}
-        <Tabs defaultValue="timeline" className="w-full">
-          <div className="flex justify-center mb-6">
-            <TabsList className="bg-slate-900 border border-slate-800">
-              <TabsTrigger value="timeline">Timeline (Daily)</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics (Insights)</TabsTrigger>
-            </TabsList>
-          </div>
-
-          <TabsContent value="timeline">
-            <TimelineView />
-          </TabsContent>
-
-          <TabsContent value="analytics">
-            <AnalyticsView />
-          </TabsContent>
-        </Tabs>
+    <div className="min-h-screen bg-slate-950 text-slate-50 font-sans overflow-x-hidden flex">
+      {/* 1. SIDEBAR (Fixed & Animated) */}
+      <div
+        className={cn(
+          "fixed top-0 left-0 h-full z-50 w-64 bg-slate-900 border-r border-slate-800 transition-transform duration-300 ease-in-out",
+          // Se aperta: traslazione 0. Se chiusa: traslazione -100% (esce a sinistra)
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        {/* Passiamo la funzione toggle alla Sidebar per mettere il bottone dentro */}
+        <Sidebar
+          currentTab={activeTab}
+          onTabChange={setActiveTab}
+          onClose={() => setIsSidebarOpen(false)} // <--- Nuova Prop
+        />
       </div>
+
+      {/* 2. MAIN CONTENT */}
+      <main
+        className={cn(
+          "flex-1 min-h-screen transition-all duration-300 ease-in-out p-8",
+          // Se aperta: margine a sinistra = larghezza sidebar. Se chiusa: margine 0.
+          isSidebarOpen ? "ml-64" : "ml-0"
+        )}
+      >
+        {/* Bottone per APRIRE (Visibile solo se sidebar chiusa) */}
+        {!isSidebarOpen && (
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="fixed top-4 left-4 p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors border border-slate-700 z-40 shadow-lg animate-in fade-in zoom-in duration-200"
+            title="Open Sidebar"
+          >
+            <PanelLeftOpen className="w-5 h-5" />
+          </button>
+        )}
+
+        <div className="max-w-7xl mx-auto">
+          {activeTab === "overview" && <OverviewView />}
+          {activeTab === "timeline" && <TimelineView />}
+          {activeTab === "analytics" && <AnalyticsView />}
+        </div>
+      </main>
     </div>
   );
 }
