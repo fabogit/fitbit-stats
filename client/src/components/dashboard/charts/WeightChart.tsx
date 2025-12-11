@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAppSelector } from "@/store";
-import { InfoTooltip } from "@/components/ui/InfoTooltip"; // <--- Import
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 interface WeightChartProps {
   syncId?: string;
@@ -21,7 +21,7 @@ export function WeightChart({ syncId }: WeightChartProps) {
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
-      {/* Header con Tooltip */}
+      {/* Header */}
       <div className="flex items-center mb-4">
         <h3 className="text-lg font-semibold text-slate-100">
           Weight vs Calories

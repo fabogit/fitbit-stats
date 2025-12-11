@@ -1,5 +1,7 @@
 # Fitbit Personal Health Analytics & Dashboard V1
 
+Old dashboard version deployed @ <https://jade-smakager-f829b3.netlify.app/>
+
 A comprehensive local Data Engineering and Data Science pipeline to analyze, visualize, and benchmark personal health data exported from Fitbit.
 
 This project uses **Python** for the ETL process (cleaning, merging, statistics, metabolic calculations) and **Node.js/Chart.js** for an interactive local dashboard.

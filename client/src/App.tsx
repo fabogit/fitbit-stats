@@ -5,7 +5,7 @@ import { Sidebar } from "./components/dashboard/Sidebar";
 import { OverviewView } from "./components/dashboard/views/OverviewView";
 import { TimelineView } from "./components/dashboard/views/TimelineView";
 import { AnalyticsView } from "./components/dashboard/views/AnalyticsView";
-import { PanelLeftOpen } from "lucide-react"; // Icona solo per APRIRE
+import { PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function App() {
@@ -37,15 +37,13 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 font-sans overflow-x-hidden flex">
-      {/* 1. SIDEBAR (Fixed & Animated) */}
+      {/* 1. SIDEBAR*/}
       <div
         className={cn(
           "fixed top-0 left-0 h-full z-50 w-64 bg-slate-900 border-r border-slate-800 transition-transform duration-300 ease-in-out",
-          // Se aperta: traslazione 0. Se chiusa: traslazione -100% (esce a sinistra)
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Passiamo la funzione toggle alla Sidebar per mettere il bottone dentro */}
         <Sidebar
           currentTab={activeTab}
           onTabChange={setActiveTab}
@@ -57,11 +55,9 @@ function App() {
       <main
         className={cn(
           "flex-1 min-h-screen transition-all duration-300 ease-in-out p-8",
-          // Se aperta: margine a sinistra = larghezza sidebar. Se chiusa: margine 0.
           isSidebarOpen ? "ml-64" : "ml-0"
         )}
       >
-        {/* Bottone per APRIRE (Visibile solo se sidebar chiusa) */}
         {!isSidebarOpen && (
           <button
             onClick={() => setIsSidebarOpen(true)}
