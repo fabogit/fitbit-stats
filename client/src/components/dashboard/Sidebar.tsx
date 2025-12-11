@@ -25,7 +25,7 @@ export function Sidebar({ currentTab, onTabChange, onClose }: SidebarProps) {
       {/* Logo Area & Close Button */}
       <div className="p-6 border-b border-slate-800 flex items-center justify-between">
         <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          🏃‍♂️{" "}
+          🚵🏃‍♂️🏋️{" "}
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400">
             FitStats
           </span>
