@@ -19,10 +19,6 @@ interface PhysiologyChartProps {
 export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
-  // --- DATA CLEANING ---
-  // Recharts spezza la linea SOLO se il valore è esattamente 'null' o 'undefined'.
-  // Se per caso arriva uno '0', la linea tocca il fondo.
-  // Qui forziamo: se rmssd è 0 o null, diventa null.
   const cleanData = filteredData.map((d) => ({
     ...d,
     rmssd: d.rmssd && d.rmssd > 0 ? d.rmssd : null,
@@ -55,7 +51,6 @@ export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
 
       <div className="h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          {/* Usiamo cleanData invece di filteredData */}
           <ComposedChart data={cleanData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"
@@ -64,7 +59,7 @@ export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
             />
             <XAxis dataKey="date" hide />
 
-            {/* Asse SX: HRV */}
+            {/* HRV */}
             <YAxis
               yAxisId="left"
               stroke="#34d399"
@@ -73,7 +68,7 @@ export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
               width={40}
             />
 
-            {/* Asse DX: Stress */}
+            {/* Stress */}
             <YAxis
               yAxisId="right"
               orientation="right"
