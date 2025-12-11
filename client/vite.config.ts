@@ -10,4 +10,22 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: [
+            "react",
+            "react-dom",
+            "recharts",
+            "lucide-react",
+            "date-fns",
+            "@reduxjs/toolkit",
+            "react-redux",
+          ],
+        },
+      },
+    },
+  },
 });
