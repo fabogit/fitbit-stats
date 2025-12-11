@@ -10,10 +10,7 @@ export function OverviewView() {
         </p>
       </div>
 
-      {/* Qui ci sono le card */}
       <KpiGrid />
-
-      {/* Possiamo aggiungere qui un testo o un grafico riassuntivo veloce in futuro */}
     </div>
   );
 }

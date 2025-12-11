@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 interface SidebarProps {
   currentTab: string;
   onTabChange: (tab: string) => void;
-  onClose: () => void; // <--- Nuova prop
+  onClose: () => void;
 }
 
 export function Sidebar({ currentTab, onTabChange, onClose }: SidebarProps) {
@@ -31,7 +31,6 @@ export function Sidebar({ currentTab, onTabChange, onClose }: SidebarProps) {
           </span>
         </h1>
 
-        {/* Bottone CHIUDI (Dentro la navbar) */}
         <button
           onClick={onClose}
           className="text-slate-500 hover:text-white transition-colors p-1 rounded hover:bg-slate-800"

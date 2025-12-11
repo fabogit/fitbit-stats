@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useAppSelector } from "@/store";
-import { InfoTooltip } from "@/components/ui/InfoTooltip"; // <--- Import
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 interface EnergyChartProps {
   syncId?: string;

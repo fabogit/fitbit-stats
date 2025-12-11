@@ -175,8 +175,8 @@ export function KpiGrid() {
     </div>
   );
 }
+
 // --- KpiCard Component ---
-// --- Sub Component Aggiornato ---
 function KpiCard({
   title,
   value,

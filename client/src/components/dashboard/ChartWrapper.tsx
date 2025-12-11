@@ -19,9 +19,7 @@ export function ChartWrapper({
 }: ChartWrapperProps) {
   return (
     <div className="flex gap-4 items-start animate-in fade-in slide-in-from-bottom-2 duration-500">
-      {/* Colonna controlli laterale */}
       <div className="flex flex-col gap-2 pt-4 sticky top-4">
-        {/* Bottone SU */}
         <button
           onClick={onMoveUp}
           disabled={isFirst}
@@ -36,7 +34,6 @@ export function ChartWrapper({
           <ChevronUp className="w-5 h-5" />
         </button>
 
-        {/* Bottone GIÙ */}
         <button
           onClick={onMoveDown}
           disabled={isLast}
@@ -52,7 +49,7 @@ export function ChartWrapper({
         </button>
       </div>
 
-      {/* Il Grafico vero e proprio */}
+      {/* Graph */}
       <div className="flex-1 min-w-0">{children}</div>
     </div>
   );
