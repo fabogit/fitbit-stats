@@ -7,6 +7,7 @@ import { TimelineView } from "./components/dashboard/views/TimelineView";
 import { AnalyticsView } from "./components/dashboard/views/AnalyticsView";
 import { PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DataGridView } from "./components/dashboard/views/DataGridView";
 
 function App() {
   const dispatch = useAppDispatch();
@@ -72,6 +73,7 @@ function App() {
           {activeTab === "overview" && <OverviewView />}
           {activeTab === "timeline" && <TimelineView />}
           {activeTab === "analytics" && <AnalyticsView />}
+          {activeTab === "datagrid" && <DataGridView />}
         </div>
       </main>
     </div>

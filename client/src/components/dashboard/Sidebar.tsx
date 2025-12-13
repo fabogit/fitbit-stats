@@ -3,6 +3,7 @@ import {
   Activity,
   PieChart,
   PanelLeftClose,
+  Table,
 } from "lucide-react";
 import { DateFilter } from "./DateFilter";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ export function Sidebar({ currentTab, onTabChange, onClose }: SidebarProps) {
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "timeline", label: "Timeline", icon: Activity },
     { id: "analytics", label: "Analytics", icon: PieChart },
+    { id: "datagrid", label: "Data Grid", icon: Table },
   ];
 
   return (
