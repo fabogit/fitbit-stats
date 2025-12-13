@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { useAppDispatch, useAppSelector } from "@/store";
 import { setDateRange } from "@/features/dashboard/dashboardSlice";
-import { Calendar, Clock } from "lucide-react";
+import { Calendar, Clock, Filter } from "lucide-react";
 import {
   subMonths,
   parseISO,
@@ -61,7 +61,7 @@ export function DateFilter() {
 
   return (
     <div className="space-y-6">
-      {/* Data Range Info */}
+      {/* 1. Data Range Info (Available) */}
       <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
         <div className="flex items-center gap-2 text-slate-400 mb-1">
           <Clock className="w-3 h-3" />
@@ -74,6 +74,24 @@ export function DateFilter() {
         </div>
         <div className="text-[10px] text-slate-500 mt-1">
           {differenceInDays(parseISO(maxDate), parseISO(minDate))} days total
+        </div>
+      </div>
+
+      {/* 2. Selected Period Info (Active) */}
+      <div className="bg-indigo-950/30 p-3 rounded-lg border border-indigo-500/30">
+        <div className="flex items-center gap-2 text-indigo-400 mb-1">
+          <Filter className="w-3 h-3" />
+          <span className="text-[10px] uppercase font-bold tracking-wider">
+            Selected Period
+          </span>
+        </div>
+        <div className="text-xs text-slate-200 font-mono">
+          {dateRange.start} <span className="text-slate-500">to</span>{" "}
+          {dateRange.end}
+        </div>
+        <div className="text-[10px] text-indigo-400/70 mt-1">
+          {differenceInDays(parseISO(dateRange.end), parseISO(dateRange.start))}{" "}
+          days selected
         </div>
       </div>
 
