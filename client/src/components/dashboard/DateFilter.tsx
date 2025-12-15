@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
-import { useAppDispatch, useAppSelector } from "@/store";
+import { useAppDispatch, useAppSelector } from "@/store/store";
 import { setDateRange } from "@/features/dashboard/dashboardSlice";
-import { Calendar, Clock } from "lucide-react";
+import { Calendar, Clock, Filter } from "lucide-react";
 import {
   subMonths,
   parseISO,
@@ -14,10 +14,8 @@ import { cn } from "@/lib/utils";
 export function DateFilter() {
   const dispatch = useAppDispatch();
   const { dateRange, data } = useAppSelector((state) => state.dashboard);
-
   const [activePreset, setActivePreset] = useState<string>("3M");
 
-  // --- HOOKS ---
   const minDate = data.length > 0 ? data[0].date : "";
   const lastDataDate = data.length > 0 ? data[data.length - 1].date : "";
   const today = format(new Date(), "yyyy-MM-dd");
@@ -35,17 +33,11 @@ export function DateFilter() {
   const applyPreset = useCallback(
     (months: number, type?: string, label?: string) => {
       if (!data.length) return;
-
       const endObj = parseISO(maxDate);
       let startObj;
-
-      if (type === "all") {
-        startObj = parseISO(minDate);
-      } else if (type === "ytd") {
-        startObj = startOfYear(endObj);
-      } else {
-        startObj = subMonths(endObj, months);
-      }
+      if (type === "all") startObj = parseISO(minDate);
+      else if (type === "ytd") startObj = startOfYear(endObj);
+      else startObj = subMonths(endObj, months);
 
       let newStart = format(startObj, "yyyy-MM-dd");
       if (newStart < minDate) newStart = minDate;
@@ -56,29 +48,46 @@ export function DateFilter() {
     [data, dispatch, maxDate, minDate]
   );
 
-  // --- EARLY RETURN ---
   if (!dateRange || data.length === 0) return null;
 
   return (
     <div className="space-y-6">
-      {/* Data Range Info */}
-      <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
-        <div className="flex items-center gap-2 text-slate-400 mb-1">
+      {/* 1. Data Range Info */}
+      <div className="bg-muted/50 p-3 rounded-lg border border-border">
+        <div className="flex items-center gap-2 text-muted-foreground mb-1">
           <Clock className="w-3 h-3" />
           <span className="text-[10px] uppercase font-bold tracking-wider">
             Available Data
           </span>
         </div>
-        <div className="text-xs text-slate-200 font-mono">
-          {minDate} <span className="text-slate-500">to</span> {maxDate}
+        <div className="text-xs text-foreground font-mono">
+          {minDate} <span className="text-muted-foreground">to</span> {maxDate}
         </div>
-        <div className="text-[10px] text-slate-500 mt-1">
+        <div className="text-[10px] text-muted-foreground mt-1">
           {differenceInDays(parseISO(maxDate), parseISO(minDate))} days total
         </div>
       </div>
 
+      {/* 2. Selected Period Info */}
+      <div className="bg-primary/10 p-3 rounded-lg border border-primary/20">
+        <div className="flex items-center gap-2 text-primary mb-1">
+          <Filter className="w-3 h-3" />
+          <span className="text-[10px] uppercase font-bold tracking-wider">
+            Selected Period
+          </span>
+        </div>
+        <div className="text-xs text-foreground font-mono">
+          {dateRange.start} <span className="text-muted-foreground">to</span>{" "}
+          {dateRange.end}
+        </div>
+        <div className="text-[10px] text-primary/80 mt-1">
+          {differenceInDays(parseISO(dateRange.end), parseISO(dateRange.start))}{" "}
+          days selected
+        </div>
+      </div>
+
       <div className="space-y-3">
-        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-1">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
           Quick Filters
         </div>
 
@@ -93,8 +102,8 @@ export function DateFilter() {
               className={cn(
                 "px-2 py-1.5 text-xs font-medium rounded border transition-all duration-200",
                 activePreset === preset.label
-                  ? "bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-900/20"
-                  : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white"
+                  ? "bg-primary text-primary-foreground border-primary shadow-md"
+                  : "bg-card text-card-foreground border-border hover:bg-accent hover:text-accent-foreground"
               )}
             >
               {preset.label}
@@ -104,15 +113,15 @@ export function DateFilter() {
       </div>
 
       {/* Manual Inputs */}
-      <div className="space-y-2 pt-2 border-t border-slate-800">
-        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-1 mb-2">
+      <div className="space-y-2 pt-2 border-t border-border">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-2">
           Custom Range
         </div>
-        <div className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700 group focus-within:border-indigo-500/50 transition-colors">
-          <Calendar className="w-3 h-3 text-slate-400 group-focus-within:text-indigo-400" />
+        <div className="flex items-center gap-2 bg-card p-2 rounded border border-input group focus-within:border-primary/50 transition-colors">
+          <Calendar className="w-3 h-3 text-muted-foreground group-focus-within:text-primary" />
           <input
             type="date"
-            className="bg-transparent text-xs text-slate-200 focus:outline-none w-full cursor-pointer [&::-webkit-calendar-picker-indicator]:invert"
+            className="bg-transparent text-xs text-foreground focus:outline-none w-full cursor-pointer p-0"
             value={dateRange.start}
             min={minDate}
             max={maxDate}
@@ -124,11 +133,11 @@ export function DateFilter() {
             }}
           />
         </div>
-        <div className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700 group focus-within:border-indigo-500/50 transition-colors">
-          <Calendar className="w-3 h-3 text-slate-400 group-focus-within:text-indigo-400" />
+        <div className="flex items-center gap-2 bg-card p-2 rounded border border-input group focus-within:border-primary/50 transition-colors">
+          <Calendar className="w-3 h-3 text-muted-foreground group-focus-within:text-primary" />
           <input
             type="date"
-            className="bg-transparent text-xs text-slate-200 focus:outline-none w-full cursor-pointer [&::-webkit-calendar-picker-indicator]:invert"
+            className="bg-transparent text-xs text-foreground focus:outline-none w-full cursor-pointer p-0"
             value={dateRange.end}
             min={minDate}
             max={maxDate}

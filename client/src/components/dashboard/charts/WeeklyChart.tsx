@@ -10,7 +10,8 @@ import {
   ReferenceLine,
   Cell,
 } from "recharts";
-import { useAppSelector } from "@/store";
+import { useAppSelector } from "@/store/store";
+import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { parseISO, getDay } from "date-fns";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
@@ -22,6 +23,8 @@ type DayStat = {
 
 export function WeeklyChart() {
   const { filteredData } = useAppSelector((state) => state.dashboard);
+  const resolvedTheme = useAppSelector(selectResolvedTheme);
+  const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
 
   const chartData = useMemo(() => {
     const daysAcc: Record<number, DayStat> = {
@@ -34,12 +37,10 @@ export function WeeklyChart() {
       6: { sum: 0, count: 0, label: "Sat" },
     };
 
-    // 2. Aggrega i dati
     filteredData.forEach((d) => {
       if (d.readiness_raw !== null) {
         const dateObj = parseISO(d.date);
         const dayIndex = getDay(dateObj);
-
         if (daysAcc[dayIndex]) {
           daysAcc[dayIndex].sum += d.readiness_raw;
           daysAcc[dayIndex].count += 1;
@@ -59,9 +60,9 @@ export function WeeklyChart() {
   }, [filteredData]);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+    <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
       <div className="flex items-center mb-4">
-        <h3 className="text-lg font-semibold text-slate-100">
+        <h3 className="text-lg font-semibold text-card-foreground">
           Weekly Readiness Pattern
         </h3>
         <InfoTooltip
@@ -69,11 +70,11 @@ export function WeeklyChart() {
             <span>
               Average Readiness Score by day of the week.
               <br />
-              <strong className="text-emerald-400">Positive:</strong> Generally
+              <strong className="text-emerald-500">Positive:</strong> Generally
               recovered.
               <br />
-              <strong className="text-rose-400">Negative:</strong> Generally
-              tired/stressed on this day.
+              <strong className="text-rose-500">Negative:</strong> Generally
+              tired/stressed.
             </span>
           }
         />
@@ -84,26 +85,27 @@ export function WeeklyChart() {
           <BarChart data={chartData}>
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#334155"
+              stroke="var(--border)"
               opacity={0.5}
             />
-            <XAxis dataKey="day" stroke="#94a3b8" tick={{ fontSize: 12 }} />
-            <YAxis stroke="#94a3b8" tick={{ fontSize: 12 }} />
+            <XAxis dataKey="day" stroke={axisColor} tick={{ fontSize: 12 }} />
+            <YAxis stroke={axisColor} tick={{ fontSize: 12 }} />
             <Tooltip
-              cursor={{ fill: "#334155", opacity: 0.2 }}
+              cursor={{ fill: "var(--muted)", opacity: 0.2 }}
               contentStyle={{
-                backgroundColor: "#1e293b",
-                borderColor: "#334155",
-                color: "#f8fafc",
+                backgroundColor: "hsl(var(--popover))",
+                borderColor: "hsl(var(--border))",
+                color: "hsl(var(--popover-foreground))",
+                borderRadius: "var(--radius)",
               }}
               formatter={(value: number) => [value.toFixed(2), "Avg Score"]}
             />
-            <ReferenceLine y={0} stroke="#64748b" />
+            <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" />
             <Bar dataKey="avgReadiness">
               {chartData.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}
-                  fill={entry.avgReadiness >= 0 ? "#34d399" : "#f43f5e"} // Emerald vs Rose
+                  fill={entry.avgReadiness >= 0 ? "#34d399" : "#f43f5e"}
                 />
               ))}
             </Bar>

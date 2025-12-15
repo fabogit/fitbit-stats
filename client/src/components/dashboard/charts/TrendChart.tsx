@@ -8,7 +8,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { useAppSelector } from "@/store";
+import { useAppSelector } from "@/store/store";
+import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 interface TrendChartProps {
@@ -17,22 +18,25 @@ interface TrendChartProps {
 
 export function TrendChart({ syncId }: TrendChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
+  const resolvedTheme = useAppSelector(selectResolvedTheme);
+  const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+    <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
       <div className="flex items-center mb-4">
-        <h3 className="text-lg font-semibold text-slate-100">Health Trend</h3>
+        <h3 className="text-lg font-semibold text-card-foreground">
+          Health Trend
+        </h3>
         <InfoTooltip
           content={
             <span>
               Comparison between your daily{" "}
-              <strong className="text-blue-400">Readiness</strong> (Blue) and{" "}
+              <strong className="text-blue-500">Readiness</strong> (Blue) and{" "}
               <strong className="text-rose-500">Resting Heart Rate</strong>{" "}
               (Red).
               <br />
-              <span className="text-slate-400">Insight:</span> Ideally, when RHR
-              drops, Readiness goes up. A spike in RHR often signals stress or
-              illness.
+              <span className="text-muted-foreground">Insight:</span> Ideally,
+              when RHR drops, Readiness goes up.
             </span>
           }
         />
@@ -43,30 +47,32 @@ export function TrendChart({ syncId }: TrendChartProps) {
           <LineChart data={filteredData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#334155"
+              stroke="var(--border)"
               opacity={0.5}
             />
+
             <XAxis dataKey="date" hide />
-            {/* Left Axis: Readiness */}
+
             <YAxis
               yAxisId="left"
               domain={[-4, 4]}
-              stroke="#60a5fa" // Blue
+              stroke={axisColor}
               tick={{ fontSize: 12 }}
             />
-            {/* Right Axis: RHR */}
             <YAxis
               yAxisId="right"
               orientation="right"
               domain={["auto", "auto"]}
-              stroke="#f43f5e" // Red
+              stroke={axisColor}
               tick={{ fontSize: 12 }}
             />
+
             <Tooltip
               contentStyle={{
-                backgroundColor: "#1e293b",
-                borderColor: "#334155",
-                color: "#f8fafc",
+                backgroundColor: "hsl(var(--popover))",
+                borderColor: "hsl(var(--border))",
+                color: "hsl(var(--popover-foreground))",
+                borderRadius: "var(--radius)",
               }}
               itemStyle={{ fontSize: 12 }}
             />
@@ -77,7 +83,7 @@ export function TrendChart({ syncId }: TrendChartProps) {
               type="monotone"
               dataKey="readiness_raw"
               name="Readiness (Z)"
-              stroke="#60a5fa"
+              stroke="#3b82f6"
               strokeWidth={2}
               dot={false}
             />
