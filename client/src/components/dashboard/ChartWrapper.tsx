@@ -26,8 +26,8 @@ export function ChartWrapper({
           className={cn(
             "p-2 rounded-lg border transition-all duration-200",
             isFirst
-              ? "border-slate-800 text-slate-700 cursor-not-allowed opacity-50"
-              : "border-slate-700 bg-slate-800 text-slate-400 hover:text-indigo-400 hover:border-indigo-500 hover:bg-slate-700 shadow-sm"
+              ? "border-border text-muted-foreground/50 cursor-not-allowed opacity-50 bg-muted/20"
+              : "border-border bg-card text-muted-foreground hover:text-primary hover:border-primary hover:bg-accent shadow-sm"
           )}
           title="Move Chart Up"
         >
@@ -40,8 +40,8 @@ export function ChartWrapper({
           className={cn(
             "p-2 rounded-lg border transition-all duration-200",
             isLast
-              ? "border-slate-800 text-slate-700 cursor-not-allowed opacity-50"
-              : "border-slate-700 bg-slate-800 text-slate-400 hover:text-indigo-400 hover:border-indigo-500 hover:bg-slate-700 shadow-sm"
+              ? "border-border text-muted-foreground/50 cursor-not-allowed opacity-50 bg-muted/20"
+              : "border-border bg-card text-muted-foreground hover:text-primary hover:border-primary hover:bg-accent shadow-sm"
           )}
           title="Move Chart Down"
         >

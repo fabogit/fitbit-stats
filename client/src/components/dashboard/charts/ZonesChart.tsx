@@ -7,13 +7,18 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { useAppSelector } from "@/store";
+import { useAppSelector } from "@/store/store";
+import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
-
-const COLORS = ["#334155", "#eab308", "#f97316", "#ef4444"]; // Slate, Yellow, Orange, Red
 
 export function ZonesChart() {
   const { filteredData } = useAppSelector((state) => state.dashboard);
+  const resolvedTheme = useAppSelector(selectResolvedTheme);
+  const chartColors = useMemo(() => {
+    return resolvedTheme === "dark"
+      ? ["#94a3b8", "#facc15", "#fb923c", "#f87171"]
+      : ["#334155", "#eab308", "#f97316", "#ef4444"];
+  }, [resolvedTheme]);
 
   const chartData = useMemo(() => {
     const totals = filteredData.reduce(
@@ -37,16 +42,18 @@ export function ZonesChart() {
   const totalMinutes = chartData.reduce((acc, curr) => acc + curr.value, 0);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm flex flex-col h-full">
+    <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex flex-col h-full">
       <div className="flex items-center mb-4">
-        <h3 className="text-lg font-semibold text-slate-100">Activity Zones</h3>
+        <h3 className="text-lg font-semibold text-card-foreground">
+          Activity Zones
+        </h3>
         <InfoTooltip
           content={
             <span>
               Total minutes spent in each intensity zone for the selected
               period.
               <br />
-              <strong className="text-indigo-400">Insight:</strong> High
+              <strong className="text-indigo-500">Insight:</strong> High
               "Sedentary" time can offset workout benefits.
             </span>
           }
@@ -65,22 +72,23 @@ export function ZonesChart() {
                 outerRadius={80}
                 paddingAngle={5}
                 dataKey="value"
-                stroke="none"
+                stroke="hsl(var(--card))"
               >
                 {chartData.map((_entry, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={COLORS[index % COLORS.length]}
+                    fill={chartColors[index % chartColors.length]}
                   />
                 ))}
               </Pie>
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "#1e293b",
-                  borderColor: "#334155",
-                  color: "#f8fafc",
+                  backgroundColor: "hsl(var(--popover))",
+                  borderColor: "hsl(var(--border))",
+                  color: "hsl(var(--popover-foreground))",
+                  borderRadius: "var(--radius)",
                 }}
-                itemStyle={{ color: "#fff" }}
+                itemStyle={{ color: "hsl(var(--foreground))" }}
                 formatter={(value: number) => [
                   `${value.toLocaleString()} min`,
                   "Duration",
@@ -90,7 +98,7 @@ export function ZonesChart() {
             </PieChart>
           </ResponsiveContainer>
         ) : (
-          <div className="text-slate-500 text-sm flex flex-col items-center">
+          <div className="text-muted-foreground text-sm flex flex-col items-center">
             <span>No activity data for this period</span>
           </div>
         )}

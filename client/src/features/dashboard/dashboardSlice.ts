@@ -28,6 +28,17 @@ export const fetchHealthData = createAsyncThunk(
     const response = await fetch("/dashboard_data.json");
     if (!response.ok) throw new Error("Failed to load dashboard data");
     return (await response.json()) as HealthRecord[];
+  },
+  {
+    // --- CACHING LOGIC ---
+    condition: (_, { getState }) => {
+      const { dashboard } = getState() as { dashboard: DashboardState };
+
+      if (dashboard.status === "succeeded" || dashboard.status === "loading") {
+        return false;
+      }
+      return true;
+    },
   }
 );
 

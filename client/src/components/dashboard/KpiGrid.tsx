@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useAppSelector } from "@/store";
+import { useAppSelector } from "@/store/store";
 import {
   calculateAverage,
   formatNumber,
@@ -31,7 +31,7 @@ export function KpiGrid() {
 
   if (filteredData.length === 0) {
     return (
-      <div className="text-slate-500 text-sm">
+      <div className="text-muted-foreground text-sm">
         No data available for this range.
       </div>
     );
@@ -76,7 +76,7 @@ export function KpiGrid() {
       <KpiCard
         title="Readiness"
         value={formatNumber(currentReadiness, 2)}
-        icon={<Zap className="w-5 h-5 text-yellow-500" />} // Icona w-5 h-5
+        icon={<Zap className="w-5 h-5 text-yellow-500" />}
         colorClass={getReadinessColor(currentReadiness)}
         tooltipContent={
           <span>
@@ -91,7 +91,9 @@ export function KpiGrid() {
       <KpiCard
         title="Avg HRV"
         value={avgHRV !== "--" ? `${avgHRV} ms` : "--"}
-        icon={<HeartPulse className="w-5 h-5 text-emerald-400" />} // Icona w-5 h-5
+        icon={
+          <HeartPulse className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
+        }
         tooltipContent={
           <span>
             Heart Rate Variability (rMSSD).
@@ -105,7 +107,9 @@ export function KpiGrid() {
       <KpiCard
         title="Avg Stress Score"
         value={avgStress !== "--" ? avgStress : "--"}
-        icon={<BrainCircuit className="w-5 h-5 text-purple-400" />} // Icona w-5 h-5
+        icon={
+          <BrainCircuit className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+        }
         tooltipContent={
           <span>
             Stress Management Score (0-100).
@@ -119,7 +123,7 @@ export function KpiGrid() {
       <KpiCard
         title="Avg RHR"
         value={`${avgRHR} bpm`}
-        icon={<Activity className="w-5 h-5 text-rose-500" />} // Icona w-5 h-5
+        icon={<Activity className="w-5 h-5 text-rose-500" />}
         tooltipContent={
           <span>
             Resting Heart Rate.
@@ -133,7 +137,7 @@ export function KpiGrid() {
       <KpiCard
         title="Restorative Sleep"
         value={qualityPct !== "--" ? `${qualityPct}%` : "--"}
-        icon={<Moon className="w-5 h-5 text-indigo-400" />} // Icona w-5 h-5
+        icon={<Moon className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />}
         tooltipContent={
           <span>
             % of Deep + REM sleep.
@@ -147,7 +151,7 @@ export function KpiGrid() {
       <KpiCard
         title="Avg Sleep Score"
         value={avgSleep}
-        icon={<Moon className="w-5 h-5 text-slate-400" />} // Icona w-5 h-5
+        icon={<Moon className="w-5 h-5 text-slate-400" />}
         tooltipContent={<span>Overall sleep quality (0-100).</span>}
       />
 
@@ -155,7 +159,7 @@ export function KpiGrid() {
       <KpiCard
         title="Avg SpO2"
         value={avgSpO2 !== "--" ? `${avgSpO2}%` : "--"}
-        icon={<Droplet className="w-5 h-5 text-sky-400" />} // Icona w-5 h-5
+        icon={<Droplet className="w-5 h-5 text-sky-500 dark:text-sky-400" />}
         tooltipContent={
           <span>
             Blood Oxygen.
@@ -169,23 +173,22 @@ export function KpiGrid() {
       <KpiCard
         title="Avg Calories"
         value={parseInt(avgCals.replace("--", "0")).toLocaleString()}
-        icon={<TrendingUp className="w-5 h-5 text-orange-500" />} // Icona w-5 h-5
+        icon={<TrendingUp className="w-5 h-5 text-orange-500" />}
         tooltipContent={<span>Total Daily Burn (BMR + Active).</span>}
       />
     </div>
   );
 }
 
-// --- KpiCard Component ---
 function KpiCard({
   title,
   value,
   icon,
-  colorClass = "text-slate-50",
+  colorClass = "text-card-foreground",
   tooltipContent,
 }: KpiCardProps) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm transition-all hover:border-slate-700 hover:shadow-md hover:shadow-indigo-500/10">
+    <div className="bg-card border border-border rounded-xl p-6 shadow-sm transition-all hover:border-primary/50 hover:shadow-md">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center">
           {tooltipContent && (
@@ -193,7 +196,7 @@ function KpiCard({
               <InfoTooltip content={tooltipContent} />
             </div>
           )}
-          <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             {title}
           </h3>
         </div>
@@ -209,10 +212,9 @@ function KpiCard({
   );
 }
 
-// Helper
 function getReadinessColor(val: number | null) {
-  if (val === null) return "text-slate-500";
-  if (val > 1) return "text-emerald-400";
-  if (val < -1) return "text-rose-400";
-  return "text-blue-400";
+  if (val === null) return "text-muted-foreground";
+  if (val > 1) return "text-emerald-600 dark:text-emerald-400";
+  if (val < -1) return "text-rose-600 dark:text-rose-400";
+  return "text-blue-600 dark:text-blue-400";
 }
