@@ -18,9 +18,11 @@ interface EnergyChartProps {
 
 export function EnergyChart({ syncId }: EnergyChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
+
   const resolvedTheme = useAppSelector(selectResolvedTheme);
-  const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b"; // Slate-400 (Dark) vs Slate-500 (Light)
-  const bmrColor = resolvedTheme === "dark" ? "#475569" : "#64748b"; // Slate-600 (Dark) vs Slate-500 (Light)
+
+  const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
+  const bmrColor = resolvedTheme === "dark" ? "#475569" : "#64748b";
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
@@ -52,7 +54,7 @@ export function EnergyChart({ syncId }: EnergyChartProps) {
             <XAxis dataKey="date" hide />
             <YAxis stroke={axisColor} tick={{ fontSize: 12 }} />
             <Tooltip
-              cursor={{ fill: "var(--muted)", opacity: 0.2 }}
+              cursor={{ fill: "hsl(var(--foreground))", opacity: 0.1 }}
               contentStyle={{
                 backgroundColor: "hsl(var(--popover))",
                 borderColor: "hsl(var(--border))",
