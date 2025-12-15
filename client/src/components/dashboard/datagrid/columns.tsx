@@ -13,7 +13,6 @@ const f = (val: unknown, dec = 0) => {
   return val.toFixed(dec);
 };
 
-// higherIsBetter: true (es. Sleep), false (es. RHR)
 const getCellColor = (
   val: number | null,
   key: string,
@@ -21,18 +20,20 @@ const getCellColor = (
   higherIsBetter: boolean = true
 ) => {
   if (val === null || val === undefined || !meta?.stats?.[key])
-    return "text-slate-400";
+    return "text-muted-foreground";
 
   const stats = meta.stats[key];
 
   if (higherIsBetter) {
-    if (val <= stats.p33) return "text-rose-400 font-medium";
-    if (val >= stats.p66) return "text-emerald-400 font-medium";
-    return "text-amber-200/80";
+    if (val <= stats.p33) return "text-rose-600 dark:text-rose-400 font-medium";
+    if (val >= stats.p66)
+      return "text-emerald-600 dark:text-emerald-400 font-medium";
+    return "text-amber-600 dark:text-amber-200/80";
   } else {
-    if (val <= stats.p33) return "text-emerald-400 font-medium";
-    if (val >= stats.p66) return "text-rose-400 font-medium";
-    return "text-amber-200/80";
+    if (val <= stats.p33)
+      return "text-emerald-600 dark:text-emerald-400 font-medium";
+    if (val >= stats.p66) return "text-rose-600 dark:text-rose-400 font-medium";
+    return "text-amber-600 dark:text-amber-200/80";
   }
 };
 
@@ -43,7 +44,7 @@ const sortableHeader =
       <Button
         variant="ghost"
         onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        className="hover:bg-slate-800 h-8 px-2 text-xs font-semibold text-slate-400 -ml-2"
+        className="hover:bg-accent h-8 px-2 text-xs font-semibold text-muted-foreground -ml-2"
       >
         {label}
         <ArrowUpDown className="ml-2 h-3 w-3" />
@@ -56,27 +57,27 @@ export const columns: ColumnDef<HealthRecord>[] = [
     accessorKey: "date",
     header: sortableHeader("Date"),
     cell: ({ row }) => (
-      <div className="font-mono text-xs text-slate-300">
+      <div className="font-mono text-xs text-muted-foreground">
         {row.getValue("date")}
       </div>
     ),
   },
 
-  // --- HEALTH ---
   {
     accessorKey: "readiness_raw",
     header: sortableHeader("Readiness"),
     cell: ({ row }) => {
       const val = row.getValue("readiness_raw") as number | null;
-      let color = "text-slate-400";
+      let color = "text-muted-foreground";
       if (val !== null) {
-        if (val > 1) color = "text-emerald-400 font-bold";
-        else if (val < -1) color = "text-rose-400 font-bold";
-        else color = "text-blue-300";
+        if (val > 1) color = "text-emerald-600 dark:text-emerald-400 font-bold";
+        else if (val < -1) color = "text-rose-600 dark:text-rose-400 font-bold";
+        else color = "text-blue-600 dark:text-blue-300";
       }
       return <div className={cn("text-xs", color)}>{f(val, 2)}</div>;
     },
   },
+
   {
     accessorKey: "resting_bpm",
     header: sortableHeader("RHR"),
@@ -145,8 +146,6 @@ export const columns: ColumnDef<HealthRecord>[] = [
       );
     },
   },
-
-  // --- SLEEP ---
   {
     accessorKey: "overall_score",
     header: sortableHeader("Sleep"),
@@ -181,8 +180,6 @@ export const columns: ColumnDef<HealthRecord>[] = [
       );
     },
   },
-
-  // --- ACTIVITY ---
   {
     accessorKey: "calories_total",
     header: sortableHeader("Cals"),
@@ -238,7 +235,7 @@ export const columns: ColumnDef<HealthRecord>[] = [
     accessorKey: "weight",
     header: sortableHeader("Weight"),
     cell: ({ row }) => (
-      <div className="text-xs text-slate-400">
+      <div className="text-xs text-muted-foreground">
         {f(row.getValue("weight"), 1)}
       </div>
     ),

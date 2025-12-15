@@ -7,7 +7,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useAppSelector } from "@/store";
+import { useAppSelector } from "@/store/store";
+import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 interface CustomTooltipProps {
@@ -27,6 +28,8 @@ interface CustomTooltipProps {
 
 export function ScatterChart() {
   const { filteredData } = useAppSelector((state) => state.dashboard);
+  const resolvedTheme = useAppSelector(selectResolvedTheme);
+  const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
 
   const scatterData = filteredData
     .filter(
@@ -42,9 +45,9 @@ export function ScatterChart() {
     }));
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+    <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
       <div className="flex items-center mb-4">
-        <h3 className="text-lg font-semibold text-slate-100">
+        <h3 className="text-lg font-semibold text-card-foreground">
           Correlation: Activity vs Sleep
         </h3>
         <InfoTooltip
@@ -52,12 +55,9 @@ export function ScatterChart() {
             <span>
               Each dot represents a single day.
               <br />
-              <strong>X-Axis:</strong> Calories Burned
+              <strong>X:</strong> Calories, <strong>Y:</strong> Sleep Score.
               <br />
-              <strong>Y-Axis:</strong> Sleep Score
-              <br />
-              <span className="text-indigo-400">Insight:</span> Check if higher
-              activity days lead to better sleep scores (upward trend).
+              Insight: Does high activity lead to better sleep?
             </span>
           }
         />
@@ -68,34 +68,35 @@ export function ScatterChart() {
           <ReScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#334155"
+              stroke="var(--border)"
               opacity={0.5}
             />
             <XAxis
               type="number"
               dataKey="x"
               name="Calories"
-              stroke="#94a3b8"
+              stroke={axisColor}
               tick={{ fontSize: 12 }}
               label={{
                 value: "Calories Burned",
                 position: "insideBottom",
                 offset: -10,
-                fill: "#94a3b8",
+                fill: axisColor,
               }}
             />
+
             <YAxis
               type="number"
               dataKey="y"
               name="Sleep Score"
-              stroke="#94a3b8"
+              stroke={axisColor}
               tick={{ fontSize: 12 }}
               domain={[50, 100]}
               label={{
                 value: "Sleep Score",
                 angle: -90,
                 position: "insideLeft",
-                fill: "#94a3b8",
+                fill: axisColor,
               }}
             />
             <Tooltip
@@ -105,7 +106,7 @@ export function ScatterChart() {
             <Scatter
               name="Days"
               data={scatterData}
-              fill="#8b5cf6" // Violet
+              fill="#8b5cf6"
               fillOpacity={0.6}
             />
           </ReScatterChart>
@@ -115,23 +116,24 @@ export function ScatterChart() {
   );
 }
 
+/** Alias */
 const ReScatterChart = ReScatter;
 
 const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-slate-800 border border-slate-700 p-2 rounded shadow-lg text-xs text-white">
-        <p className="font-bold mb-1 text-slate-300">{data.date}</p>
+      <div className="bg-popover border border-border p-2 rounded shadow-lg text-xs text-popover-foreground">
+        <p className="font-bold mb-1 text-muted-foreground">{data.date}</p>
         <p>
           Calories:{" "}
-          <span className="text-orange-400 font-mono">
+          <span className="text-orange-500 font-mono">
             {data.calories_total.toFixed(0)}
           </span>
         </p>
         <p>
           Sleep Score:{" "}
-          <span className="text-indigo-400 font-mono">
+          <span className="text-indigo-500 font-mono">
             {data.overall_score}
           </span>
         </p>
