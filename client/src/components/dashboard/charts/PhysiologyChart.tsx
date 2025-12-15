@@ -9,7 +9,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { useAppSelector } from "@/store";
+import { useAppSelector } from "@/store/store";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 interface PhysiologyChartProps {
@@ -25,22 +25,22 @@ export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
   }));
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
+    <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
       <div className="flex items-center mb-6">
-        <h3 className="text-lg font-semibold text-slate-100">
+        <h3 className="text-lg font-semibold text-card-foreground">
           Physiology: HRV & Stress
         </h3>
         <InfoTooltip
           content={
             <span>
-              <strong className="text-emerald-400">HRV (Line):</strong> Heart
+              <strong className="text-emerald-500">HRV (Line):</strong> Heart
               Rate Variability (ms).
               <br />
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-muted-foreground">
                 Gaps indicate missing data.
               </span>
               <br />
-              <strong className="text-violet-400">
+              <strong className="text-violet-500">
                 Stress Score (Area):
               </strong>{" "}
               Higher score = Better handling.
@@ -54,25 +54,23 @@ export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
           <ComposedChart data={cleanData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#334155"
+              stroke="var(--border)"
               opacity={0.5}
             />
             <XAxis dataKey="date" hide />
 
-            {/* HRV */}
             <YAxis
               yAxisId="left"
-              stroke="#34d399"
+              stroke="#10b981"
               tick={{ fontSize: 12 }}
               domain={["auto", "auto"]}
               width={40}
             />
 
-            {/* Stress */}
             <YAxis
               yAxisId="right"
               orientation="right"
-              stroke="#a78bfa"
+              stroke="#8b5cf6"
               domain={[0, 100]}
               tick={{ fontSize: 12 }}
               width={40}
@@ -80,33 +78,31 @@ export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
 
             <Tooltip
               contentStyle={{
-                backgroundColor: "#1e293b",
-                borderColor: "#334155",
-                color: "#f8fafc",
+                backgroundColor: "hsl(var(--popover))",
+                borderColor: "hsl(var(--border))",
+                color: "hsl(var(--popover-foreground))",
+                borderRadius: "var(--radius)",
               }}
-              labelStyle={{ color: "#94a3b8" }}
+              labelStyle={{ color: "hsl(var(--muted-foreground))" }}
             />
             <Legend wrapperStyle={{ paddingTop: "10px" }} />
 
-            {/* Stress (Area) */}
             <Area
               yAxisId="right"
               type="monotone"
               dataKey="stress_score"
               name="Stress Mngmt Score"
               fill="#8b5cf6"
-              fillOpacity={0.15}
+              fillOpacity={0.2}
               stroke="#8b5cf6"
-              connectNulls={false}
             />
 
-            {/* HRV (Line) */}
             <Line
               yAxisId="left"
               type="monotone"
               dataKey="rmssd"
               name="HRV (rMSSD)"
-              stroke="#34d399"
+              stroke="#10b981"
               strokeWidth={2}
               dot={false}
               connectNulls={false}

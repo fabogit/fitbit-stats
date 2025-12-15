@@ -68,19 +68,19 @@ export function DataTable<TData, TValue>({
   return (
     <div className="space-y-4">
       {/* --- TABLE CONTAINER --- */}
-      <div className="rounded-lg border border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+      <div className="rounded-lg border border-border bg-card overflow-hidden shadow-sm">
         <Table>
-          <TableHeader className="bg-slate-950">
+          <TableHeader className="bg-muted/50">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow
                 key={headerGroup.id}
-                className="border-slate-800 hover:bg-slate-900"
+                className="border-border hover:bg-muted/50"
               >
                 {headerGroup.headers.map((header) => {
                   return (
                     <TableHead
                       key={header.id}
-                      className="text-slate-400 h-10 px-4 font-medium"
+                      className="text-muted-foreground h-10 px-4 font-medium"
                     >
                       {header.isPlaceholder
                         ? null
@@ -100,7 +100,7 @@ export function DataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className="border-slate-800 hover:bg-slate-800/50 transition-colors h-10"
+                  className="border-border hover:bg-muted/50 transition-colors h-10"
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="py-2 px-4">
@@ -116,7 +116,7 @@ export function DataTable<TData, TValue>({
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
-                  className="h-24 text-center text-slate-500"
+                  className="h-24 text-center text-muted-foreground"
                 >
                   No results.
                 </TableCell>
@@ -130,17 +130,17 @@ export function DataTable<TData, TValue>({
       <div className="flex items-center justify-between px-2">
         {/* Page Size Selector */}
         <div className="flex items-center space-x-2">
-          <p className="text-xs font-medium text-slate-400">Rows</p>
+          <p className="text-xs font-medium text-muted-foreground">Rows</p>
           <Select
             value={`${table.getState().pagination.pageSize}`}
             onValueChange={(value) => {
               table.setPageSize(Number(value));
             }}
           >
-            <SelectTrigger className="h-8 w-[70px] bg-slate-900 border-slate-700 text-slate-300 text-xs">
+            <SelectTrigger className="h-8 w-[70px] bg-background border-input text-foreground text-xs">
               <SelectValue placeholder={table.getState().pagination.pageSize} />
             </SelectTrigger>
-            <SelectContent className="bg-slate-900 border-slate-700 text-slate-300">
+            <SelectContent>
               {[15, 30, 60, 100].map((pageSize) => (
                 <SelectItem key={pageSize} value={`${pageSize}`}>
                   {pageSize}
@@ -152,7 +152,7 @@ export function DataTable<TData, TValue>({
 
         {/* Page Navigation */}
         <div className="flex items-center space-x-2">
-          <div className="flex w-[100px] items-center justify-center text-xs font-medium text-slate-400">
+          <div className="flex w-[100px] items-center justify-center text-xs font-medium text-muted-foreground">
             Page {table.getState().pagination.pageIndex + 1} of{" "}
             {table.getPageCount()}
           </div>
@@ -161,7 +161,7 @@ export function DataTable<TData, TValue>({
             size="sm"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
-            className="h-8 w-8 p-0 border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+            className="h-8 w-8 p-0"
           >
             {"<"}
           </Button>
@@ -170,7 +170,7 @@ export function DataTable<TData, TValue>({
             size="sm"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
-            className="h-8 w-8 p-0 border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+            className="h-8 w-8 p-0"
           >
             {">"}
           </Button>

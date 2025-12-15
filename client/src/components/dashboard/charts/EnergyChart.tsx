@@ -8,7 +8,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { useAppSelector } from "@/store";
+import { useAppSelector } from "@/store/store";
+import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 interface EnergyChartProps {
@@ -17,11 +18,16 @@ interface EnergyChartProps {
 
 export function EnergyChart({ syncId }: EnergyChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
+  const resolvedTheme = useAppSelector(selectResolvedTheme);
+  const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b"; // Slate-400 (Dark) vs Slate-500 (Light)
+  const bmrColor = resolvedTheme === "dark" ? "#475569" : "#64748b"; // Slate-600 (Dark) vs Slate-500 (Light)
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+    <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
       <div className="flex items-center mb-4">
-        <h3 className="text-lg font-semibold text-slate-100">Daily Energy</h3>
+        <h3 className="text-lg font-semibold text-card-foreground">
+          Daily Energy
+        </h3>
         <InfoTooltip
           content={
             <span>
@@ -40,32 +46,28 @@ export function EnergyChart({ syncId }: EnergyChartProps) {
           <BarChart data={filteredData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#334155"
+              stroke="var(--border)"
               opacity={0.5}
             />
             <XAxis dataKey="date" hide />
-            <YAxis stroke="#94a3b8" tick={{ fontSize: 12 }} />
+            <YAxis stroke={axisColor} tick={{ fontSize: 12 }} />
             <Tooltip
-              cursor={{ fill: "#334155", opacity: 0.2 }}
+              cursor={{ fill: "var(--muted)", opacity: 0.2 }}
               contentStyle={{
-                backgroundColor: "#1e293b",
-                borderColor: "#334155",
-                color: "#f8fafc",
+                backgroundColor: "hsl(var(--popover))",
+                borderColor: "hsl(var(--border))",
+                color: "hsl(var(--popover-foreground))",
+                borderRadius: "var(--radius)",
               }}
             />
             <Legend wrapperStyle={{ paddingTop: "10px" }} />
 
-            <Bar
-              dataKey="bmr"
-              name="BMR (Base)"
-              stackId="a"
-              fill="#64748b" // Slate-500
-            />
+            <Bar dataKey="bmr" name="BMR (Base)" stackId="a" fill={bmrColor} />
             <Bar
               dataKey="active_calories"
               name="Active Burn"
               stackId="a"
-              fill="#f59e0b" // Amber-500
+              fill="#f59e0b"
             />
           </BarChart>
         </ResponsiveContainer>

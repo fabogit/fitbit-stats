@@ -66,7 +66,7 @@ export function TimelineView() {
   };
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="space-y-6 pb-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {chartOrder.map((key, index) => (
         <ChartWrapper
           key={key}

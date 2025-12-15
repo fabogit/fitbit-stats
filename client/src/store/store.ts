@@ -5,10 +5,12 @@ import {
   type TypedUseSelectorHook,
 } from "react-redux";
 import dashboardReducer from "@/features/dashboard/dashboardSlice";
+import themeReducer from "./slices/themeSlice";
 
 export const store = configureStore({
   reducer: {
     dashboard: dashboardReducer,
+    theme: themeReducer,
   },
 });
 
