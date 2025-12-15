@@ -58,7 +58,7 @@ export function SleepChart({ syncId }: SleepChartProps) {
             <YAxis stroke={axisColor} tick={{ fontSize: 12 }} unit="m" />
 
             <Tooltip
-              cursor={{ fill: "var(--muted)", opacity: 0.2 }}
+              cursor={{ fill: "hsl(var(--foreground))", opacity: 0.1 }}
               contentStyle={{
                 backgroundColor: "hsl(var(--popover))",
                 borderColor: "hsl(var(--border))",
