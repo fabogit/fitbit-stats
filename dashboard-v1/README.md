@@ -1,6 +1,6 @@
 # Fitbit Personal Health Analytics & Dashboard V1
 
-Old dashboard version deployed @ <https://jade-smakager-f829b3.netlify.app/>
+Old dashboard version deployed @ <https://fitbit-dashboard-v1.netlify.app/>
 
 A comprehensive local Data Engineering and Data Science pipeline to analyze, visualize, and benchmark personal health data exported from Fitbit.
 
