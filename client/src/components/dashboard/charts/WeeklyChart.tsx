@@ -98,7 +98,10 @@ export function WeeklyChart() {
                 color: "hsl(var(--popover-foreground))",
                 borderRadius: "var(--radius)",
               }}
-              formatter={(value: number) => [value.toFixed(2), "Avg Score"]}
+              formatter={(value: number | undefined) => [
+                (value ?? 0).toFixed(2),
+                "Avg Score",
+              ]}
             />
             <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" />
             <Bar dataKey="avgReadiness">

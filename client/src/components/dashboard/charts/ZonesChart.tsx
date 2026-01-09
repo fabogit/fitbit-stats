@@ -89,8 +89,8 @@ export function ZonesChart() {
                   borderRadius: "var(--radius)",
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
-                formatter={(value: number) => [
-                  `${value.toLocaleString()} min`,
+                formatter={(value: number | undefined) => [
+                  `${(value ?? 0).toLocaleString()} min`,
                   "Duration",
                 ]}
               />
