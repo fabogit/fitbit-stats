@@ -34,8 +34,8 @@
         <div class="card-header">
           <h3>Readiness</h3>
           <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">
+            <button type="button" class="info-icon" aria-label="More info about Readiness" aria-describedby="tooltip-readiness">ⓘ</button>
+            <div class="tooltip-text" id="tooltip-readiness" role="tooltip">
               <strong>Z-Score Metric</strong><br>
               Combines Sleep quality and RHR.<br>
               • <strong>&gt; 1.0</strong>: Peak Condition (Train Hard)<br>
@@ -51,8 +51,8 @@
         <div class="card-header">
           <h3>RHR (Avg)</h3>
           <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">
+            <button type="button" class="info-icon" aria-label="More info about RHR" aria-describedby="tooltip-rhr">ⓘ</button>
+            <div class="tooltip-text" id="tooltip-rhr" role="tooltip">
               <strong>Resting Heart Rate</strong><br>
               A lower RHR generally indicates better cardiovascular fitness.<br>
               Spikes may indicate stress, illness, or overtraining.
@@ -66,8 +66,8 @@
         <div class="card-header">
           <h3>Sleep Score</h3>
           <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">
+            <button type="button" class="info-icon" aria-label="More info about Sleep Score" aria-describedby="tooltip-sleep">ⓘ</button>
+            <div class="tooltip-text" id="tooltip-sleep" role="tooltip">
               <strong>Fitbit Quality Score (0-100)</strong><br>
               Based on duration, deep/REM phases, and restoration.<br>
               • <strong>&gt; 80</strong>: Good<br>
@@ -82,8 +82,8 @@
         <div class="card-header">
           <h3>Calories</h3>
           <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">
+            <button type="button" class="info-icon" aria-label="More info about Calories" aria-describedby="tooltip-cals">ⓘ</button>
+            <div class="tooltip-text" id="tooltip-cals" role="tooltip">
               <strong>Total Daily Expenditure</strong><br>
               Sum of your Basal Metabolic Rate (BMR) plus calories burned from activity.<br>
               Higher values indicate higher activity levels.
@@ -101,8 +101,8 @@
         <div class="card-header">
           <h2>Health Trend: Readiness vs RHR</h2>
           <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">
+            <button type="button" class="info-icon" aria-label="More info about Health Trend" aria-describedby="tooltip-trend">ⓘ</button>
+            <div class="tooltip-text" id="tooltip-trend" role="tooltip">
               Comparison between your daily Recovery score (Blue) and Resting Heart Rate (Red).<br>
               Ideally, when RHR drops, Readiness goes up.
             </div>
@@ -117,8 +117,8 @@
         <div class="card-header">
           <h2>Daily Energy: BMR vs Active</h2>
           <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">
+            <button type="button" class="info-icon" aria-label="More info about Daily Energy" aria-describedby="tooltip-energy">ⓘ</button>
+            <div class="tooltip-text" id="tooltip-energy" role="tooltip">
               <strong>Grey (BMR):</strong> Calories burned at rest based on your weight/age.<br>
               <strong>Orange (Active):</strong> Calories burned through movement and exercise.
             </div>
@@ -133,8 +133,8 @@
         <div class="card-header">
           <h2>Activity Zones Distribution</h2>
           <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">
+            <button type="button" class="info-icon" aria-label="More info about Activity Zones" aria-describedby="tooltip-zones">ⓘ</button>
+            <div class="tooltip-text" id="tooltip-zones" role="tooltip">
               Total minutes spent in each intensity zone for the selected period.<br>
               High "Sedentary" time can offset workout benefits.
             </div>
@@ -149,8 +149,8 @@
         <div class="card-header">
           <h2>Weight vs Calories</h2>
           <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">
+            <button type="button" class="info-icon" aria-label="More info about Weight vs Calories" aria-describedby="tooltip-weight">ⓘ</button>
+            <div class="tooltip-text" id="tooltip-weight" role="tooltip">
               Correlates body weight (Yellow) with energy expenditure (Orange).<br>
               Look for lagged trends where high calorie burn leads to weight drop.
             </div>
@@ -165,8 +165,8 @@
         <div class="card-header">
           <h2>Activity vs Sleep Quality</h2>
           <div class="tooltip-container">
-            <span class="info-icon">ⓘ</span>
-            <div class="tooltip-text">
+            <button type="button" class="info-icon" aria-label="More info about Activity vs Sleep" aria-describedby="tooltip-activity-sleep">ⓘ</button>
+            <div class="tooltip-text" id="tooltip-activity-sleep" role="tooltip">
               Each dot is a day.<br>
               X-Axis: Calories Burned<br>
               Y-Axis: Sleep Score<br>
