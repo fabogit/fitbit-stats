@@ -155,13 +155,26 @@ canvas {
   cursor: help;
 }
 
-.info-icon {
+button.info-icon {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: help;
+  font-family: inherit;
   color: var(--text-secondary);
   font-size: 0.9rem;
   transition: color 0.2s;
 }
 
-.tooltip-container:hover .info-icon {
+button.info-icon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 50%;
+  color: var(--accent);
+}
+
+.tooltip-container:hover .info-icon,
+.tooltip-container:focus-within .info-icon {
   color: var(--accent);
 }
 
@@ -198,7 +211,8 @@ canvas {
   border-color: #333 transparent transparent transparent;
 }
 
-.tooltip-container:hover .tooltip-text {
+.tooltip-container:hover .tooltip-text,
+.tooltip-container:focus-within .tooltip-text {
   visibility: visible;
   opacity: 1;
 }
