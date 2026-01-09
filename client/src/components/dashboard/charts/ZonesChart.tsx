@@ -89,10 +89,17 @@ export function ZonesChart() {
                   borderRadius: "var(--radius)",
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
-                formatter={(value: number | undefined) => [
-                  `${(value ?? 0).toLocaleString()} min`,
-                  "Duration",
-                ]}
+                formatter={(
+                  value: number | string | Array<number | string>
+                ) => {
+                  const numValue = Number(value);
+
+                  const displayValue = !isNaN(numValue)
+                    ? numValue.toString()
+                    : "0";
+
+                  return [displayValue, "Duration"];
+                }}
               />
               <Legend verticalAlign="bottom" height={36} />
             </PieChart>
