@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import { useAppSelector } from "@/store/store";
 import {
   calculateAverage,
@@ -29,45 +29,82 @@ interface KpiCardProps {
 export function KpiGrid() {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
+  // Memoize KPI calculations to prevent re-computation on every render
+  const {
+    avgRHR,
+    avgSleep,
+    avgCals,
+    avgHRV,
+    avgSpO2,
+    avgStress,
+    currentReadiness,
+    qualityPct,
+  } = useMemo(() => {
+    if (filteredData.length === 0) {
+      return {
+        avgRHR: "--",
+        avgSleep: "--",
+        avgCals: "--",
+        avgHRV: "--",
+        avgSpO2: "--",
+        avgStress: "--",
+        currentReadiness: null,
+        qualityPct: "--",
+      };
+    }
+
+    const avgRHR = calculateAverage(filteredData, "resting_bpm");
+    const avgSleep = calculateAverage(filteredData, "overall_score");
+    const avgCals = calculateAverage(filteredData, "calories_total");
+    const avgHRV = calculateAverage(filteredData, "rmssd");
+    const avgSpO2 = calculateAverage(filteredData, "spo2_avg");
+    const avgStress = calculateAverage(filteredData, "stress_score");
+
+    const currentReadiness = getLastValidMetric(
+      filteredData,
+      "readiness_raw"
+    ) as number | null;
+
+    const sleepDays = filteredData.filter(
+      (d) => d.sleep_deep + d.sleep_light + d.sleep_rem + d.sleep_awake > 0
+    );
+    let qualityPct = "--";
+    if (sleepDays.length > 0) {
+      const totalMins = sleepDays.reduce(
+        (acc, curr) =>
+          acc +
+          (curr.sleep_deep +
+            curr.sleep_light +
+            curr.sleep_rem +
+            curr.sleep_awake),
+        0
+      );
+      const restorativeMins = sleepDays.reduce(
+        (acc, curr) => acc + (curr.sleep_deep + curr.sleep_rem),
+        0
+      );
+      if (totalMins > 0)
+        qualityPct = ((restorativeMins / totalMins) * 100).toFixed(1);
+    }
+
+    return {
+      avgRHR,
+      avgSleep,
+      avgCals,
+      avgHRV,
+      avgSpO2,
+      avgStress,
+      currentReadiness,
+      qualityPct,
+    };
+  }, [filteredData]);
+
   if (filteredData.length === 0) {
     return (
       <div className="text-muted-foreground text-sm">
         No data available for this range.
       </div>
     );
-  }
-
-  const avgRHR = calculateAverage(filteredData, "resting_bpm");
-  const avgSleep = calculateAverage(filteredData, "overall_score");
-  const avgCals = calculateAverage(filteredData, "calories_total");
-  const avgHRV = calculateAverage(filteredData, "rmssd");
-  const avgSpO2 = calculateAverage(filteredData, "spo2_avg");
-  const avgStress = calculateAverage(filteredData, "stress_score");
-
-  const currentReadiness = getLastValidMetric(filteredData, "readiness_raw") as
-    | number
-    | null;
-
-  const sleepDays = filteredData.filter(
-    (d) => d.sleep_deep + d.sleep_light + d.sleep_rem + d.sleep_awake > 0
-  );
-  let qualityPct = "--";
-  if (sleepDays.length > 0) {
-    const totalMins = sleepDays.reduce(
-      (acc, curr) =>
-        acc +
-        (curr.sleep_deep +
-          curr.sleep_light +
-          curr.sleep_rem +
-          curr.sleep_awake),
-      0
-    );
-    const restorativeMins = sleepDays.reduce(
-      (acc, curr) => acc + (curr.sleep_deep + curr.sleep_rem),
-      0
-    );
-    if (totalMins > 0)
-      qualityPct = ((restorativeMins / totalMins) * 100).toFixed(1);
   }
 
   return (
