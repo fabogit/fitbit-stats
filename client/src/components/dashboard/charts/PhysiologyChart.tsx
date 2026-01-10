@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   ComposedChart,
   Line,
@@ -16,7 +17,10 @@ interface PhysiologyChartProps {
   syncId?: string;
 }
 
-export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
+// OPTIMIZATION: Memoize chart to prevent re-renders when parent layout changes (e.g. reordering)
+export const PhysiologyChart = memo(function PhysiologyChart({
+  syncId,
+}: PhysiologyChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
   const cleanData = filteredData.map((d) => ({
@@ -112,4 +116,4 @@ export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
       </div>
     </div>
   );
-}
+});

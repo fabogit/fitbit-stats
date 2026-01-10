@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   LineChart,
   Line,
@@ -16,7 +17,10 @@ interface TrendChartProps {
   syncId?: string;
 }
 
-export function TrendChart({ syncId }: TrendChartProps) {
+// OPTIMIZATION: Memoize chart to prevent re-renders when parent layout changes (e.g. reordering)
+export const TrendChart = memo(function TrendChart({
+  syncId,
+}: TrendChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
   const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
@@ -102,4 +106,4 @@ export function TrendChart({ syncId }: TrendChartProps) {
       </div>
     </div>
   );
-}
+});
