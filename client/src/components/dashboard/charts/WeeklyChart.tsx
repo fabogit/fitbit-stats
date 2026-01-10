@@ -98,7 +98,9 @@ export function WeeklyChart() {
                 color: "hsl(var(--popover-foreground))",
                 borderRadius: "var(--radius)",
               }}
-              formatter={(value: number | string | Array<number | string>) => {
+              formatter={(
+                value: number | string | Array<number | string> | undefined
+              ) => {
                 const numValue = Number(value);
 
                 const displayValue = !isNaN(numValue)
