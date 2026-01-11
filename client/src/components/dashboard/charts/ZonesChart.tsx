@@ -48,6 +48,7 @@ export function ZonesChart() {
           Activity Zones
         </h3>
         <InfoTooltip
+          side="bottom"
           content={
             <span>
               Total minutes spent in each intensity zone for the selected

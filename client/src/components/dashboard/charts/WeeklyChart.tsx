@@ -66,6 +66,7 @@ export function WeeklyChart() {
           Weekly Readiness Pattern
         </h3>
         <InfoTooltip
+          side="bottom"
           content={
             <span>
               Average Readiness Score by day of the week.

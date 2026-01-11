@@ -28,6 +28,7 @@ export function SleepChart({ syncId }: SleepChartProps) {
           Sleep Architecture
         </h3>
         <InfoTooltip
+          side="bottom"
           content={
             <span>
               Breakdown of sleep stages.

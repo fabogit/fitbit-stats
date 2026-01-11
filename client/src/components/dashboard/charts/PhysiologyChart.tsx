@@ -31,6 +31,7 @@ export function PhysiologyChart({ syncId }: PhysiologyChartProps) {
           Physiology: HRV & Stress
         </h3>
         <InfoTooltip
+          side="bottom"
           content={
             <span>
               <strong className="text-emerald-500">HRV (Line):</strong> Heart

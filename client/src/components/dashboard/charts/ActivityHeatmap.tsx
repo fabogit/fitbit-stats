@@ -38,6 +38,7 @@ export function ActivityHeatmap() {
           Workout Consistency
         </h3>
         <InfoTooltip
+          side="bottom"
           content={
             <span>
               History of your <strong>Very Active Minutes</strong> based on

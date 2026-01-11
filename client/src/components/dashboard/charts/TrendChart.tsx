@@ -28,6 +28,7 @@ export function TrendChart({ syncId }: TrendChartProps) {
           Health Trend
         </h3>
         <InfoTooltip
+          side="bottom"
           content={
             <span>
               Comparison between your daily{" "}
@@ -58,13 +59,18 @@ export function TrendChart({ syncId }: TrendChartProps) {
               domain={[-4, 4]}
               stroke={axisColor}
               tick={{ fontSize: 12 }}
+              tickFormatter={(value) => value.toFixed(2)}
+              width={40}
             />
+
             <YAxis
               yAxisId="right"
               orientation="right"
               domain={["auto", "auto"]}
               stroke={axisColor}
               tick={{ fontSize: 12 }}
+              tickFormatter={(value) => value.toFixed(2)}
+              width={40}
             />
 
             <Tooltip
@@ -75,7 +81,10 @@ export function TrendChart({ syncId }: TrendChartProps) {
                 borderRadius: "var(--radius)",
               }}
               itemStyle={{ fontSize: 12 }}
+              formatter={(value: number) => [value.toFixed(2), null]}
             />
+
+            <Legend wrapperStyle={{ paddingTop: "10px" }} />
             <Legend wrapperStyle={{ paddingTop: "10px" }} />
 
             <Line

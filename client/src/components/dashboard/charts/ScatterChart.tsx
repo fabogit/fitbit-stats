@@ -51,6 +51,7 @@ export function ScatterChart() {
           Correlation: Activity vs Sleep
         </h3>
         <InfoTooltip
+          side="bottom"
           content={
             <span>
               Each dot represents a single day.
