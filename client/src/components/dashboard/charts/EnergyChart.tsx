@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   BarChart,
   Bar,
@@ -16,7 +17,10 @@ interface EnergyChartProps {
   syncId?: string;
 }
 
-export function EnergyChart({ syncId }: EnergyChartProps) {
+// OPTIMIZATION: Memoize chart to prevent re-renders when parent layout changes (e.g. reordering)
+export const EnergyChart = memo(function EnergyChart({
+  syncId,
+}: EnergyChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
   const resolvedTheme = useAppSelector(selectResolvedTheme);
@@ -77,4 +81,4 @@ export function EnergyChart({ syncId }: EnergyChartProps) {
       </div>
     </div>
   );
-}
+});
