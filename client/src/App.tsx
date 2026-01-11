@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAppDispatch, useAppSelector } from "./store/store";
 import { fetchHealthData } from "./features/dashboard/dashboardSlice";
 import { Sidebar } from "./components/dashboard/Sidebar";
@@ -25,37 +25,25 @@ function App() {
     dispatch(fetchHealthData());
   }, [dispatch]);
 
-  const handleTabChange = (tab: string) => {
+  const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab);
     if (window.innerWidth < 768) {
       setIsSidebarOpen(false);
     }
-  };
+  }, []);
+
+  const handleCloseSidebar = useCallback(() => {
+    setIsSidebarOpen(false);
+  }, []);
 
   const renderContent = () => {
-    if (status === "loading") {
-      return (
-        <div className="min-h-screen bg-background flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-        </div>
-      );
-    }
-
-    if (status === "failed") {
-      return (
-        <div className="min-h-screen bg-background p-10 text-destructive">
-          Critical Error: {error}
-        </div>
-      );
-    }
-
     return (
       <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden flex relative">
         {/* --- MOBILE BACKDROP OVERLAY --- */}
         {isSidebarOpen && (
           <div
             className="fixed inset-0 bg-black/50 z-40 md:hidden animate-in fade-in duration-200"
-            onClick={() => setIsSidebarOpen(false)}
+            onClick={handleCloseSidebar}
           />
         )}
 
@@ -66,10 +54,11 @@ function App() {
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
+          {/* OPTIMIZATION: Memoized Sidebar with stable callbacks to prevent re-renders */}
           <Sidebar
             currentTab={activeTab}
             onTabChange={handleTabChange}
-            onClose={() => setIsSidebarOpen(false)}
+            onClose={handleCloseSidebar}
           />
         </div>
 
@@ -102,12 +91,25 @@ function App() {
             </button>
           )}
 
-          {/* Views*/}
+          {/* Views Area with Loading/Error Handling */}
           <div className="max-w-7xl mx-auto p-4 md:p-8 md:pt-4">
-            {activeTab === "overview" && <OverviewView />}
-            {activeTab === "timeline" && <TimelineView />}
-            {activeTab === "analytics" && <AnalyticsView />}
-            {activeTab === "datagrid" && <DataGridView />}
+            {status === "loading" ? (
+              <div className="flex items-center justify-center h-[50vh]">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+              </div>
+            ) : status === "failed" ? (
+              <div className="p-10 text-destructive text-center">
+                <h3 className="text-lg font-bold">Error loading data</h3>
+                <p>{error}</p>
+              </div>
+            ) : (
+              <>
+                {activeTab === "overview" && <OverviewView />}
+                {activeTab === "timeline" && <TimelineView />}
+                {activeTab === "analytics" && <AnalyticsView />}
+                {activeTab === "datagrid" && <DataGridView />}
+              </>
+            )}
           </div>
         </main>
       </div>
