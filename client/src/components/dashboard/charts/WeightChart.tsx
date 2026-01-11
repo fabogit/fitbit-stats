@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   ComposedChart,
   Line,
@@ -17,7 +18,10 @@ interface WeightChartProps {
   syncId?: string;
 }
 
-export function WeightChart({ syncId }: WeightChartProps) {
+// OPTIMIZATION: Memoize chart to prevent re-renders when parent layout changes (e.g. reordering)
+export const WeightChart = memo(function WeightChart({
+  syncId,
+}: WeightChartProps) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
   const weightColor = resolvedTheme === "dark" ? "#facc15" : "#ca8a04"; // Yellow-400 vs Yellow-600
@@ -110,4 +114,4 @@ export function WeightChart({ syncId }: WeightChartProps) {
       </div>
     </div>
   );
-}
+});
