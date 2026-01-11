@@ -85,7 +85,10 @@ export const TrendChart = memo(function TrendChart({
                 borderRadius: "var(--radius)",
               }}
               itemStyle={{ fontSize: 12 }}
-              formatter={(value: number) => [value.toFixed(2), null]}
+              formatter={(value: number | undefined) => [
+                typeof value === "number" ? value.toFixed(2) : "0.00",
+                null,
+              ]}
             />
 
             <Legend wrapperStyle={{ paddingTop: "10px" }} />

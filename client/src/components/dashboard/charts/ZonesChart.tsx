@@ -91,8 +91,9 @@ export function ZonesChart() {
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 formatter={(
-                  value: number | string | Array<number | string>
+                  value: number | string | Array<number | string> | undefined
                 ) => {
+                  if (value === undefined) return ["0", "Duration"];
                   const numValue = Number(value);
 
                   const displayValue = !isNaN(numValue)
