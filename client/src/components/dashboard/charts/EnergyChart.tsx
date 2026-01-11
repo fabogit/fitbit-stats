@@ -31,6 +31,7 @@ export function EnergyChart({ syncId }: EnergyChartProps) {
           Daily Energy
         </h3>
         <InfoTooltip
+          side="bottom"
           content={
             <span>
               <strong>BMR (Grey):</strong> Calories burned at rest based on your

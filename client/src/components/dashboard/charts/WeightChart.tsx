@@ -30,6 +30,7 @@ export function WeightChart({ syncId }: WeightChartProps) {
           Weight vs Calories
         </h3>
         <InfoTooltip
+          side="bottom"
           content={
             <span>
               Correlates{" "}
