@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   LayoutDashboard,
   Activity,
@@ -15,7 +16,11 @@ interface SidebarProps {
   onClose: () => void;
 }
 
-export function Sidebar({ currentTab, onTabChange, onClose }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({
+  currentTab,
+  onTabChange,
+  onClose,
+}: SidebarProps) {
   const navItems = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "timeline", label: "Timeline", icon: Activity },
@@ -80,4 +85,4 @@ export function Sidebar({ currentTab, onTabChange, onClose }: SidebarProps) {
       </div>
     </aside>
   );
-}
+});

@@ -91,7 +91,7 @@ export function ZonesChart() {
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 formatter={(
-                  value: number | string | Array<number | string>
+                  value: number | string | Array<number | string> | undefined
                 ) => {
                   const numValue = Number(value);
 
