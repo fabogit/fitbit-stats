@@ -1,9 +1,17 @@
+import { useAppSelector } from "@/store/store";
+import { NoDataState } from "../NoDataState";
 import { ZonesChart } from "../charts/ZonesChart";
 import { ScatterChart } from "../charts/ScatterChart";
 import { WeeklyChart } from "../charts/WeeklyChart";
 import { ActivityHeatmap } from "../charts/ActivityHeatmap";
 
-export function AnalyticsView() {
+export function AnalyticsView({ onAction }: { onAction?: () => void }) {
+  const { filteredData } = useAppSelector((state) => state.dashboard);
+
+  if (filteredData.length === 0) {
+    return <NoDataState onAction={onAction} />;
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       {/* 1. Heatmap (Full Width) */}

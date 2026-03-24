@@ -5,10 +5,13 @@ import { WeightChart } from "../charts/WeightChart";
 import { SleepChart } from "../charts/SleepChart";
 import { PhysiologyChart } from "../charts/PhysiologyChart";
 import { ChartWrapper } from "../ChartWrapper";
+import { useAppSelector } from "@/store/store";
+import { NoDataState } from "../NoDataState";
 
 type ChartKey = "trend" | "physiology" | "sleep" | "energy" | "weight";
 
-export function TimelineView() {
+export function TimelineView({ onAction }: { onAction?: () => void }) {
+  const { filteredData } = useAppSelector((state) => state.dashboard);
   const SYNC_ID = "main-timeline-sync";
   const STORAGE_KEY = "fitbit-timeline-order";
 
@@ -36,6 +39,10 @@ export function TimelineView() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(chartOrder));
   }, [chartOrder]);
+
+  if (filteredData.length === 0) {
+    return <NoDataState onAction={onAction} />;
+  }
 
   const moveUp = (index: number) => {
     if (index === 0) return;

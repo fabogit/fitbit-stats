@@ -100,11 +100,7 @@ export function KpiGrid() {
   }, [filteredData]);
 
   if (filteredData.length === 0) {
-    return (
-      <div className="text-muted-foreground text-sm">
-        No data available for this range.
-      </div>
-    );
+    return null;
   }
 
   return (

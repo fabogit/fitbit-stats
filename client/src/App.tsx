@@ -6,14 +6,19 @@ import { OverviewView } from "./components/dashboard/views/OverviewView";
 import { TimelineView } from "./components/dashboard/views/TimelineView";
 import { AnalyticsView } from "./components/dashboard/views/AnalyticsView";
 import { DataGridView } from "./components/dashboard/views/DataGridView";
-import { PanelLeftOpen } from "lucide-react";
+import { BriefView } from "./components/dashboard/views/BriefView";
+import { PanelLeftOpen, PanelLeftClose } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ThemeManager } from "./components/theme/ThemeManager";
+import { SettingsModal } from "./components/dashboard/SettingsModal";
+import { ModeToggle } from "./components/mode-toggle";
+import { LandingPage } from "./components/onboarding/LandingPage";
 
 function App() {
   const dispatch = useAppDispatch();
-  const { status, error } = useAppSelector((state) => state.dashboard);
+  const { status } = useAppSelector((state) => state.dashboard);
   const [activeTab, setActiveTab] = useState("overview");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isFirstRun, setIsFirstRun] = useState<boolean | null>(null); // null = checking
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== "undefined") {
       return window.innerWidth >= 768;
@@ -22,10 +27,37 @@ function App() {
   });
 
   useEffect(() => {
-    dispatch(fetchHealthData());
+    // Check if configuration exists
+    const checkConfig = async () => {
+      try {
+        const resp = await fetch("http://localhost:8000/api/config");
+        const configData = await resp.json();
+        
+        if (!configData || !configData.dob) {
+          setIsFirstRun(true);
+        } else {
+          setIsFirstRun(false);
+          dispatch(fetchHealthData());
+        }
+      } catch (e) {
+        console.error("Failed to fetch config", e);
+        // If we can't even reach the API, treat as first run or show onboarding
+        setIsFirstRun(true);
+      }
+    };
+    checkConfig();
   }, [dispatch]);
 
+  const handleInitialConfigSuccess = () => {
+    setIsFirstRun(false);
+    dispatch(fetchHealthData());
+  };
+
   const handleTabChange = (tab: string) => {
+    if (tab === "settings") {
+      setIsSettingsOpen(true);
+      return;
+    }
     setActiveTab(tab);
     if (window.innerWidth < 768) {
       setIsSidebarOpen(false);
@@ -33,7 +65,7 @@ function App() {
   };
 
   const renderContent = () => {
-    if (status === "loading") {
+    if (isFirstRun === null || (status === "loading" && !isFirstRun)) {
       return (
         <div className="min-h-screen bg-background flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
@@ -41,16 +73,30 @@ function App() {
       );
     }
 
-    if (status === "failed") {
-      return (
-        <div className="min-h-screen bg-background p-10 text-destructive">
-          Critical Error: {error}
-        </div>
-      );
+    if (isFirstRun) {
+      return <LandingPage onSuccess={handleInitialConfigSuccess} />;
     }
 
     return (
       <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden flex relative">
+        <SettingsModal isOpen={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
+        
+        {/* --- GLOBAL CONTROLS (Top Right) --- */}
+        <div className="fixed top-4 right-4 z-[60] flex flex-col items-end gap-3">
+          <ModeToggle />
+           <button
+             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+             className="p-2 rounded-lg bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition-all border border-border shadow-lg"
+             title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
+           >
+             {isSidebarOpen ? (
+               <PanelLeftClose className="w-5 h-5" />
+             ) : (
+               <PanelLeftOpen className="w-5 h-5" />
+             )}
+           </button>
+        </div>
+
         {/* --- MOBILE BACKDROP OVERLAY --- */}
         {isSidebarOpen && (
           <div
@@ -69,7 +115,6 @@ function App() {
           <Sidebar
             currentTab={activeTab}
             onTabChange={handleTabChange}
-            onClose={() => setIsSidebarOpen(false)}
           />
         </div>
 
@@ -77,36 +122,19 @@ function App() {
         <main
           className={cn(
             "flex-1 min-h-screen transition-all duration-300 ease-in-out",
-            // Responsive Layout Logic
             isSidebarOpen ? "md:ml-64" : "ml-0"
           )}
         >
-          {/* Header Mobile */}
-          <div className="p-4 md:hidden flex items-center sticky top-0 bg-background/95 backdrop-blur z-30 border-b border-border">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-2 rounded-lg bg-card text-muted-foreground hover:text-foreground border border-border shadow-sm"
-            >
-              <PanelLeftOpen className="w-5 h-5" />
-            </button>
-            <span className="ml-3 font-semibold text-lg">FitStats</span>
+          {/* Header Mobile - Just the text, toggles are fixed right */}
+          <div className="p-4 md:hidden flex items-center justify-center sticky top-0 bg-background/95 backdrop-blur z-30 border-b border-border h-16">
+            <span className="font-semibold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">FitStats</span>
           </div>
 
-          {!isSidebarOpen && (
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="hidden md:block fixed top-4 left-4 p-2 rounded-lg bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border border-border z-40 shadow-lg animate-in fade-in zoom-in duration-200"
-              title="Open Sidebar"
-            >
-              <PanelLeftOpen className="w-5 h-5" />
-            </button>
-          )}
-
-          {/* Views*/}
-          <div className="max-w-7xl mx-auto p-4 md:p-8 md:pt-4">
-            {activeTab === "overview" && <OverviewView />}
-            {activeTab === "timeline" && <TimelineView />}
-            {activeTab === "analytics" && <AnalyticsView />}
+          <div className="p-4 pt-20 md:p-8 md:pt-8 min-h-screen overflow-y-auto">
+            {activeTab === "overview" && <OverviewView onAction={() => setIsSettingsOpen(true)} />}
+            {activeTab === "timeline" && <TimelineView onAction={() => setIsSettingsOpen(true)} />}
+            {activeTab === "analytics" && <AnalyticsView onAction={() => setIsSettingsOpen(true)} />}
+            {activeTab === "brief" && <BriefView />}
             {activeTab === "datagrid" && <DataGridView />}
           </div>
         </main>
@@ -114,12 +142,7 @@ function App() {
     );
   };
 
-  return (
-    <>
-      <ThemeManager />
-      {renderContent()}
-    </>
-  );
+  return renderContent();
 }
 
 export default App;
