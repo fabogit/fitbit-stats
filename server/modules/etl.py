@@ -21,10 +21,19 @@ def filter_by_date(df):
         try: df.index = pd.to_datetime(df.index)
         except: return df
 
-    mask = (df.index >= config.START_DATE)
+    mask = None
+    if config.START_DATE:
+        mask = (df.index >= config.START_DATE)
+        
     if config.END_DATE:
-        mask = mask & (df.index <= config.END_DATE)
-    return df.loc[mask]
+        if mask is not None:
+            mask = mask & (df.index <= config.END_DATE)
+        else:
+            mask = (df.index <= config.END_DATE)
+            
+    if mask is not None:
+        return df.loc[mask]
+    return df
 
 def load_collection(folder_name, file_pattern, parser_func):
     """
@@ -68,7 +77,27 @@ def load_collection(folder_name, file_pattern, parser_func):
         full_df = full_df[~full_df.index.duplicated(keep='last')]
 
     full_df = full_df.sort_index()
-    return filter_by_date(full_df)
+    return full_df
+
+def get_data_date_range():
+    """
+    Scans the data directory to find the earliest and latest available dates.
+    Uses 'calories-*.json' as the reliable anchor for date coverage.
+    """
+    search_path = os.path.join(config.DATA_DIR, "Global Export Data", "calories-*.json")
+    files = glob.glob(search_path)
+    if not files: return None, None
+
+    dates = []
+    for f in files:
+        try:
+            # Extract date from filename: calories-YYYY-MM-DD.json
+            date_part = os.path.basename(f).replace('calories-', '').replace('.json', '')
+            dates.append(pd.to_datetime(date_part))
+        except: continue
+    
+    if not dates: return None, None
+    return min(dates).strftime('%Y-%m-%d'), max(dates).strftime('%Y-%m-%d')
 
 def merge_all_data():
     """
@@ -83,7 +112,15 @@ def merge_all_data():
     Returns:
         pd.DataFrame: The fully processed Master Dataset ready for analysis.
     """
-    print(f"\n=== BUILDING MASTER DATASET ({config.START_DATE} onwards) ===")
+    # Auto-detect date range if not explicitly set
+    detected_start, detected_end = get_data_date_range()
+    if not config.START_DATE and detected_start:
+        config.START_DATE = detected_start
+    if not config.END_DATE and detected_end:
+        config.END_DATE = detected_end
+
+    date_str = f"{config.START_DATE} to {config.END_DATE}" if config.START_DATE else "All Time"
+    print(f"\n=== BUILDING MASTER DATASET ({date_str}) ===")
 
     # Define Loading Plan: (Folder, Pattern, Parser)
     load_plan = [
@@ -156,3 +193,11 @@ def export_to_json(df):
 
     export_df.to_json(output_path, orient='records')
     print(f"-> Dashboard JSON exported to: {output_path}")
+
+    # ALSO: If a 'dist' folder exists (production build), update it too!
+    # This ensures that even after a build, the dashboard remains fresh.
+    dist_dir = config.CLIENT_PUBLIC_DIR.replace("public", "dist")
+    if os.path.exists(dist_dir):
+        dist_path = os.path.join(dist_dir, "dashboard_data.json")
+        export_df.to_json(dist_path, orient='records')
+        print(f"-> Syncing to production build: {dist_path}")

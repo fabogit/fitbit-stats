@@ -25,9 +25,18 @@ const initialState: DashboardState = {
 export const fetchHealthData = createAsyncThunk(
   "dashboard/fetchHealthData",
   async () => {
-    const response = await fetch("/dashboard_data.json");
-    if (!response.ok) throw new Error("Failed to load dashboard data");
-    return (await response.json()) as HealthRecord[];
+    try {
+      const response = await fetch("/dashboard_data.json");
+      if (response.status === 404) {
+        console.warn("dashboard_data.json not found (normal on first run)");
+        return [];
+      }
+      if (!response.ok) throw new Error("Failed to load dashboard data");
+      return (await response.json()) as HealthRecord[];
+    } catch (e) {
+      console.error("Error fetching dashboard data:", e);
+      return []; // Return empty array instead of failing the state
+    }
   },
   {
     // --- CACHING LOGIC ---

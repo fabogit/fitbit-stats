@@ -1,4 +1,7 @@
 import config
+import pandas as pd
+from typing import Literal
+
 
 def calculate_readiness(df):
     """ Calculates Z-Score based Readiness. """
@@ -17,13 +20,23 @@ def calculate_metabolic_metrics(df):
 
     # 1. Fill Weight
     if 'weight' in df.columns:
-        df['weight_filled'] = df['weight'].ffill().bfill()
+        # Interpolate missing values linearly to represent gradual changes
+        df['weight_filled'] = df['weight'].interpolate(method='linear')
+        # Fill remaining NaNs (edges or if no data points) with user configured fallback
+        df['weight_filled'] = df['weight_filled'].fillna(config.USER_WEIGHT_KG)
     else:
-        df['weight_filled'] = 75.0
+        df['weight_filled'] = config.USER_WEIGHT_KG
 
     # 2. BMR
-    s = 5 if config.USER_GENDER == 'male' else -161
-    df['bmr'] = (10 * df['weight_filled']) + (6.25 * config.USER_HEIGHT_CM) - (5 * config.USER_AGE) + s
+    s: Literal[-161, 5] = 5 if config.USER_GENDER == 'male' else -161
+
+    # Calculate age dynamically based on DOB and the record's date (index)
+    dob = pd.to_datetime(config.USER_DOB)
+
+    # df.index is expected to be a DatetimeIndex
+    age_series = (df.index - dob).days / 365.25
+
+    df['bmr'] = (10 * df['weight_filled']) + (6.25 * config.USER_HEIGHT_CM) - (5 * age_series) + s
 
     # 3. Active Calories
     df['active_calories'] = (df['calories_total'] - df['bmr']).clip(lower=0)
