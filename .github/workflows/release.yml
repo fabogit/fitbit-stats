@@ -73,6 +73,10 @@ jobs:
         working-directory: ./client
         run: pnpm install
 
+      - name: Run Linter (Guard)
+        working-directory: ./client
+        run: pnpm run lint
+
       - name: Build and Publish with Tauri (Automatic Release)
         uses: tauri-apps/tauri-action@v0
         env:

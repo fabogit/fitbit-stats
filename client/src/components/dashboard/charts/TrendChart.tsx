@@ -48,7 +48,7 @@ export const TrendChart = memo(function TrendChart({
       </div>
 
       <div className="h-[300px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <LineChart data={filteredData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"
@@ -85,7 +85,7 @@ export const TrendChart = memo(function TrendChart({
                 borderRadius: "var(--radius)",
               }}
               itemStyle={{ fontSize: 12 }}
-              formatter={(value: number) => [value.toFixed(2), null]}
+              formatter={(value: number | string | readonly (number | string)[] | undefined) => [typeof value === 'number' ? value.toFixed(2) : String(value || 0), ""]}
             />
 
             <Legend wrapperStyle={{ paddingTop: "10px" }} />

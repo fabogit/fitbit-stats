@@ -55,7 +55,7 @@ export const PhysiologyChart = memo(function PhysiologyChart({
       </div>
 
       <div className="h-[300px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <ComposedChart data={cleanData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"

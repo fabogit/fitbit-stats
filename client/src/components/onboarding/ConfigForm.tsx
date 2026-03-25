@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Command } from "@tauri-apps/plugin-shell";
 import { appDataDir } from "@tauri-apps/api/path";
+import { exists, readTextFile, writeTextFile, BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,6 @@ export function ConfigForm({
     const loadConfig = async () => {
       if (isTauri()) {
         try {
-          const { readTextFile, BaseDirectory } = await import("@tauri-apps/plugin-fs");
           const content = await readTextFile("session_config.json", { baseDir: BaseDirectory.AppData });
           const data = JSON.parse(content);
           if (data && Object.keys(data).length > 0) {
@@ -132,8 +132,6 @@ export function ConfigForm({
 
     if (isTauri()) {
       try {
-        // Dynamic import avoids execution errors if plugin-fs is stripped in web
-        const { exists } = await import("@tauri-apps/plugin-fs");
         const isValid = await exists(pathToCheck.trim());
         if (isValid) {
           setPathStatus("valid");
@@ -206,7 +204,6 @@ export function ConfigForm({
         
         // Save to native config
         try {
-          const { writeTextFile, BaseDirectory, mkdir } = await import("@tauri-apps/plugin-fs");
           await mkdir("", { baseDir: BaseDirectory.AppData, recursive: true }).catch(() => {});
           await writeTextFile("session_config.json", JSON.stringify(formData), { baseDir: BaseDirectory.AppData });
         } catch (e) {

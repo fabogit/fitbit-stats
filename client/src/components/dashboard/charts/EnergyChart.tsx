@@ -49,7 +49,7 @@ export const EnergyChart = memo(function EnergyChart({
       </div>
 
       <div className="h-[300px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <BarChart data={filteredData} syncId={syncId}>
             <CartesianGrid
               strokeDasharray="3 3"
