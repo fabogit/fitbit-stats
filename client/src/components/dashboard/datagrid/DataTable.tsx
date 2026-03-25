@@ -48,6 +48,7 @@ export function DataTable<TData, TValue>({
     pageSize: 15,
   });
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,

@@ -82,7 +82,7 @@ export function WeeklyChart() {
       </div>
 
       <div className="h-[300px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <BarChart data={chartData}>
             <CartesianGrid
               strokeDasharray="3 3"
@@ -99,7 +99,7 @@ export function WeeklyChart() {
                 color: "hsl(var(--popover-foreground))",
                 borderRadius: "var(--radius)",
               }}
-              formatter={(value: number | string | Array<number | string>) => {
+              formatter={(value: number | string | readonly (number | string)[] | undefined) => {
                 const numValue = Number(value);
 
                 const displayValue = !isNaN(numValue)

@@ -3,7 +3,6 @@ import {
   Activity,
   PieChart,
   Table,
-  Settings,
 } from "lucide-react";
 import { DateFilter } from "./DateFilter";
 import { cn } from "@/lib/utils";
@@ -15,7 +14,6 @@ interface SidebarProps {
 
 export function Sidebar({ currentTab, onTabChange }: SidebarProps) {
   const navItems = [
-    { id: "settings", label: "Calculate / Edit", icon: Settings },
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "timeline", label: "Timeline", icon: Activity },
     { id: "analytics", label: "Analytics", icon: PieChart },

@@ -5,12 +5,11 @@ import { Sidebar } from "./components/dashboard/Sidebar";
 import { OverviewView } from "./components/dashboard/views/OverviewView";
 import { TimelineView } from "./components/dashboard/views/TimelineView";
 import { AnalyticsView } from "./components/dashboard/views/AnalyticsView";
+import { cn } from "@/lib/utils";
 import { DataGridView } from "./components/dashboard/views/DataGridView";
 import { BriefView } from "./components/dashboard/views/BriefView";
-import { PanelLeftOpen, PanelLeftClose } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { SettingsModal } from "./components/dashboard/SettingsModal";
-import { ModeToggle } from "./components/mode-toggle";
+import { Header } from "./components/dashboard/Header";
 import { LandingPage } from "./components/onboarding/LandingPage";
 import { isTauri } from "@tauri-apps/api/core";
 import { exists, BaseDirectory } from "@tauri-apps/plugin-fs";
@@ -91,66 +90,55 @@ function App() {
     }
 
     return (
-      <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden flex relative">
+      <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden flex flex-col items-stretch relative">
         <SettingsModal isOpen={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
         
-        {/* --- GLOBAL CONTROLS (Top Right) --- */}
-        <div className="fixed top-4 right-4 z-[60] flex flex-col items-end gap-3">
-          <ModeToggle />
-           <button
-             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-             className="p-2 rounded-lg bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition-all border border-border shadow-lg"
-             title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
-           >
-             {isSidebarOpen ? (
-               <PanelLeftClose className="w-5 h-5" />
-             ) : (
-               <PanelLeftOpen className="w-5 h-5" />
-             )}
-           </button>
-        </div>
+        {/* --- GLOBAL HEADER (Full Width, Always Top) --- */}
+        <Header
+          activeTab={activeTab}
+          isSidebarOpen={isSidebarOpen}
+          setIsSidebarOpen={setIsSidebarOpen}
+          onRecalculate={() => setIsSettingsOpen(true)}
+        />
 
-        {/* --- MOBILE BACKDROP OVERLAY --- */}
-        {isSidebarOpen && (
+        <div className="flex flex-1 relative overflow-hidden h-[calc(100vh-64px)]">
+          {/* --- MOBILE BACKDROP OVERLAY --- */}
+          {isSidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black/50 z-40 md:hidden animate-in fade-in duration-200"
+              onClick={() => setIsSidebarOpen(false)}
+            />
+          )}
+
+          {/* --- SIDEBAR (Starts below Header) --- */}
           <div
-            className="fixed inset-0 bg-black/50 z-40 md:hidden animate-in fade-in duration-200"
-            onClick={() => setIsSidebarOpen(false)}
-          />
-        )}
+            className={cn(
+              "fixed top-16 left-0 h-[calc(100vh-64px)] z-50 w-64 bg-card border-r border-border transition-transform duration-300 ease-in-out shadow-xl md:shadow-none",
+              isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+            )}
+          >
+            <Sidebar
+              currentTab={activeTab}
+              onTabChange={handleTabChange}
+            />
+          </div>
 
-        {/* --- SIDEBAR --- */}
-        <div
-          className={cn(
-            "fixed top-0 left-0 h-full z-50 w-64 bg-card border-r border-border transition-transform duration-300 ease-in-out shadow-xl md:shadow-none",
-            isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-          )}
-        >
-          <Sidebar
-            currentTab={activeTab}
-            onTabChange={handleTabChange}
-          />
+          {/* --- MAIN CONTENT (Starts below Header) --- */}
+          <main
+            className={cn(
+              "flex-1 min-h-full transition-all duration-300 ease-in-out flex flex-col overflow-y-auto mt-0 px-0",
+              isSidebarOpen ? "md:ml-64" : "ml-0"
+            )}
+          >
+            <div className="p-4 md:p-8 flex-1">
+              {activeTab === "overview" && <OverviewView onAction={() => setIsSettingsOpen(true)} />}
+              {activeTab === "timeline" && <TimelineView onAction={() => setIsSettingsOpen(true)} />}
+              {activeTab === "analytics" && <AnalyticsView onAction={() => setIsSettingsOpen(true)} />}
+              {activeTab === "brief" && <BriefView />}
+              {activeTab === "datagrid" && <DataGridView />}
+            </div>
+          </main>
         </div>
-
-        {/* --- MAIN CONTENT --- */}
-        <main
-          className={cn(
-            "flex-1 min-h-screen transition-all duration-300 ease-in-out",
-            isSidebarOpen ? "md:ml-64" : "ml-0"
-          )}
-        >
-          {/* Header Mobile - Just the text, toggles are fixed right */}
-          <div className="p-4 md:hidden flex items-center justify-center sticky top-0 bg-background/95 backdrop-blur z-30 border-b border-border h-16">
-            <span className="font-semibold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">FitStats</span>
-          </div>
-
-          <div className="p-4 pt-20 md:p-8 md:pt-8 min-h-screen overflow-y-auto">
-            {activeTab === "overview" && <OverviewView onAction={() => setIsSettingsOpen(true)} />}
-            {activeTab === "timeline" && <TimelineView onAction={() => setIsSettingsOpen(true)} />}
-            {activeTab === "analytics" && <AnalyticsView onAction={() => setIsSettingsOpen(true)} />}
-            {activeTab === "brief" && <BriefView />}
-            {activeTab === "datagrid" && <DataGridView />}
-          </div>
-        </main>
       </div>
     );
   };

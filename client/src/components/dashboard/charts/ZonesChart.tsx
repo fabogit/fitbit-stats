@@ -63,7 +63,7 @@ export function ZonesChart() {
 
       <div className="flex-1 min-h-[300px] w-full flex items-center justify-center">
         {totalMinutes > 0 ? (
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <PieChart>
               <Pie
                 data={chartData}
@@ -90,9 +90,7 @@ export function ZonesChart() {
                   borderRadius: "var(--radius)",
                 }}
                 itemStyle={{ color: "hsl(var(--foreground))" }}
-                formatter={(
-                  value: number | string | Array<number | string>
-                ) => {
+                formatter={(value: number | string | readonly (number | string)[] | undefined) => {
                   const numValue = Number(value);
 
                   const displayValue = !isNaN(numValue)
