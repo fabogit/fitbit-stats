@@ -1,0 +1,86 @@
+name: Release FitStats (Multi-Platform)
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers only on tag pushes (e.g. git tag v1.0.0 && git push origin v1.0.0)
+
+jobs:
+  build-and-release:
+    permissions:
+      contents: write # Allows Actions to upload the final files to the repo's Release folder
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin_name: fitstats-engine
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bin_name: fitstats-engine
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin_name: fitstats-engine.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (Vite Frontend)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Python (PyInstaller Backend)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup Rust (Tauri Core)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Build Python Sidecar (Data Analyzer)
+        working-directory: ./server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+          pyinstaller --clean fitstats-engine.spec
+
+      - name: Move Sidecar to Tauri Bin directory
+        shell: bash
+        run: |
+          mkdir -p client/src-tauri/bin
+          # Moves the native Python executable renaming it with the exact Target Triple Tauri expects
+          cp server/dist/${{ matrix.bin_name }} client/src-tauri/bin/fitstats-engine-${{ matrix.target }}
+
+      - name: Install React dependencies
+        working-directory: ./client
+        run: pnpm install
+
+      - name: Build and Publish with Tauri (Automatic Release)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ./client
+          tagName: ${{ github.ref_name }} # Use the same name as the Tag (e.g. v1.0.0)
+          releaseName: "FitStats ${{ github.ref_name }}"
+          releaseBody: "New auto-compiled native multi-platform release for Mac, Windows, and Linux."
+          releaseDraft: false
+          prerelease: false

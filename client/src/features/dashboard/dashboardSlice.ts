@@ -5,6 +5,8 @@ import {
 } from "@reduxjs/toolkit";
 import type { HealthRecord, DateRange } from "@/types/health";
 import { subMonths, parseISO, format } from "date-fns";
+import { isTauri } from "@tauri-apps/api/core";
+import { readTextFile, BaseDirectory } from "@tauri-apps/plugin-fs";
 
 interface DashboardState {
   data: HealthRecord[];
@@ -26,13 +28,23 @@ export const fetchHealthData = createAsyncThunk(
   "dashboard/fetchHealthData",
   async () => {
     try {
-      const response = await fetch("/dashboard_data.json");
-      if (response.status === 404) {
-        console.warn("dashboard_data.json not found (normal on first run)");
-        return [];
+      if (isTauri()) {
+        try {
+          const content = await readTextFile("dashboard_data.json", { baseDir: BaseDirectory.AppData });
+          return JSON.parse(content) as HealthRecord[];
+        } catch (fileErr) {
+          console.warn("dashboard_data.json non trovato localmente. (Normale al primo avvio)", fileErr);
+          return [];
+        }
+      } else {
+        const response = await fetch("/dashboard_data.json");
+        if (response.status === 404) {
+          console.warn("dashboard_data.json not found (normal on first run)");
+          return [];
+        }
+        if (!response.ok) throw new Error("Failed to load dashboard data");
+        return (await response.json()) as HealthRecord[];
       }
-      if (!response.ok) throw new Error("Failed to load dashboard data");
-      return (await response.json()) as HealthRecord[];
     } catch (e) {
       console.error("Error fetching dashboard data:", e);
       return []; // Return empty array instead of failing the state

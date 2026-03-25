@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { SettingsModal } from "./components/dashboard/SettingsModal";
 import { ModeToggle } from "./components/mode-toggle";
 import { LandingPage } from "./components/onboarding/LandingPage";
+import { isTauri } from "@tauri-apps/api/core";
+import { exists, BaseDirectory } from "@tauri-apps/plugin-fs";
 
 function App() {
   const dispatch = useAppDispatch();
@@ -30,18 +32,29 @@ function App() {
     // Check if configuration exists
     const checkConfig = async () => {
       try {
-        const resp = await fetch("http://localhost:8000/api/config");
-        const configData = await resp.json();
-        
-        if (!configData || !configData.dob) {
-          setIsFirstRun(true);
+        if (isTauri()) {
+          const hasData = await exists("dashboard_data.json", { baseDir: BaseDirectory.AppData });
+          
+          if (hasData) {
+            setIsFirstRun(false);
+            dispatch(fetchHealthData());
+          } else {
+            setIsFirstRun(true);
+          }
         } else {
-          setIsFirstRun(false);
-          dispatch(fetchHealthData());
+          const resp = await fetch("http://localhost:8000/api/config");
+          const configData = await resp.json();
+          
+          if (!configData || !configData.dob) {
+            setIsFirstRun(true);
+          } else {
+            setIsFirstRun(false);
+            dispatch(fetchHealthData());
+          }
         }
       } catch (e) {
-        console.error("Failed to fetch config", e);
-        // If we can't even reach the API, treat as first run or show onboarding
+        console.error("Failed to fetch config or read fs", e);
+        // If we can't route or check, treat as first run
         setIsFirstRun(true);
       }
     };
