@@ -6,6 +6,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfigForm } from "../onboarding/ConfigForm";
+import { useAppDispatch } from "../../store/store";
+import { fetchHealthData } from "../../features/dashboard/dashboardSlice";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -13,6 +15,8 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onOpenChange }: SettingsModalProps) {
+  const dispatch = useAppDispatch();
+  
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent 
@@ -32,7 +36,10 @@ export function SettingsModal({ isOpen, onOpenChange }: SettingsModalProps) {
         </DialogHeader>
         <div className="py-4">
           <ConfigForm 
-            onSuccess={() => onOpenChange(false)} 
+            onSuccess={() => {
+              onOpenChange(false);
+              dispatch(fetchHealthData());
+            }} 
             submitLabel="Update & Recalculate" 
           />
         </div>

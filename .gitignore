@@ -61,6 +61,11 @@ server/data
 *.csv
 dashboard_data.json
 
+# ==========================
+# TAURI & RUST (Client Sidecar)
+# ==========================
+client/src-tauri/bin/
+
 # Ai agents
 .agent*
 .claude*

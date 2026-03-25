@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
+import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { Command } from "@tauri-apps/plugin-shell";
+import { appDataDir } from "@tauri-apps/api/path";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -36,26 +39,51 @@ export function ConfigForm({
   const [pathError, setPathError] = useState("");
 
   useEffect(() => {
-    // Fetch saved configuration on mount
-    fetch("http://localhost:8000/api/config")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && Object.keys(data).length > 0) {
-          setFormData((prev) => ({
-            ...prev,
-            dob: data.dob || prev.dob,
-            gender: data.gender || prev.gender,
-            height: data.height ? String(data.height) : prev.height,
-            weight: data.weight ? String(data.weight) : prev.weight,
-            data_path: data.data_path || prev.data_path,
-          }));
-          // Optionally auto-verify path if it exists
-          if (data.data_path) {
-             setPathStatus("idle");
+    const loadConfig = async () => {
+      if (isTauri()) {
+        try {
+          const { readTextFile, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+          const content = await readTextFile("session_config.json", { baseDir: BaseDirectory.AppData });
+          const data = JSON.parse(content);
+          if (data && Object.keys(data).length > 0) {
+            setFormData((prev) => ({
+              ...prev,
+              dob: data.dob || prev.dob,
+              gender: data.gender || prev.gender,
+              height: data.height ? String(data.height) : prev.height,
+              weight: data.weight ? String(data.weight) : prev.weight,
+              data_path: data.data_path || prev.data_path,
+            }));
+            if (data.data_path) {
+              setPathStatus("idle");
+            }
           }
+        } catch {
+          // Normal on first run if file doesn't exist
         }
-      })
-      .catch((err) => console.error("Could not fetch config:", err));
+      } else {
+        // Fetch saved configuration on mount for web
+        fetch("http://localhost:8000/api/config")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data && Object.keys(data).length > 0) {
+              setFormData((prev) => ({
+                ...prev,
+                dob: data.dob || prev.dob,
+                gender: data.gender || prev.gender,
+                height: data.height ? String(data.height) : prev.height,
+                weight: data.weight ? String(data.weight) : prev.weight,
+                data_path: data.data_path || prev.data_path,
+              }));
+              if (data.data_path) {
+                 setPathStatus("idle");
+              }
+            }
+          })
+          .catch((err) => console.error("Could not fetch config:", err));
+      }
+    };
+    loadConfig();
   }, []);
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -75,7 +103,7 @@ export function ConfigForm({
 
   const handleBrowse = async () => {
     // Check if running inside Tauri
-    if ((window as any).__TAURI_INTERNALS__) {
+    if (isTauri()) {
       try {
         const selectedPath = await open({
           directory: true,
@@ -101,21 +129,40 @@ export function ConfigForm({
       return;
     }
     setPathStatus("checking");
-    try {
-      const resp = await fetch(
-        `http://localhost:8000/api/check-path?path=${encodeURIComponent(pathToCheck.trim())}`,
-      );
-      const data = await resp.json();
-      if (data.valid) {
-        setPathStatus("valid");
-        setPathError("");
-      } else {
+
+    if (isTauri()) {
+      try {
+        // Dynamic import avoids execution errors if plugin-fs is stripped in web
+        const { exists } = await import("@tauri-apps/plugin-fs");
+        const isValid = await exists(pathToCheck.trim());
+        if (isValid) {
+          setPathStatus("valid");
+          setPathError("");
+        } else {
+          setPathStatus("invalid");
+          setPathError("Directory non trovata sul filesystem locale.");
+        }
+      } catch {
         setPathStatus("invalid");
-        setPathError(data.reason);
+        setPathError("Impossibile accedere al direttorio nativamente.");
       }
-    } catch {
-      setPathStatus("invalid");
-      setPathError("Server unreachable");
+    } else {
+      try {
+        const resp = await fetch(
+          `http://localhost:8000/api/check-path?path=${encodeURIComponent(pathToCheck.trim())}`,
+        );
+        const data = await resp.json();
+        if (data.valid) {
+          setPathStatus("valid");
+          setPathError("");
+        } else {
+          setPathStatus("invalid");
+          setPathError(data.reason);
+        }
+      } catch {
+        setPathStatus("invalid");
+        setPathError("API server docker irraggiungibile.");
+      }
     }
   }, []);
 
@@ -153,28 +200,63 @@ export function ConfigForm({
 
     setLoading(true);
 
-    try {
-      const resp = await fetch(`http://localhost:8000/api/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dob: formData.dob,
-          gender: formData.gender,
-          height: heightVal,
-          weight: weightVal,
-          data_path: pathVal,
-        }),
-      });
-
-      if (!resp.ok) {
-        console.error("Failed to start processing");
-      } else {
-        onSuccess();
+    if (isTauri()) {
+      try {
+        const outDir = await appDataDir();
+        
+        // Save to native config
+        try {
+          const { writeTextFile, BaseDirectory, mkdir } = await import("@tauri-apps/plugin-fs");
+          await mkdir("", { baseDir: BaseDirectory.AppData, recursive: true }).catch(() => {});
+          await writeTextFile("session_config.json", JSON.stringify(formData), { baseDir: BaseDirectory.AppData });
+        } catch (e) {
+          console.warn("Could not save config to appDataDir", e);
+        }
+        
+        const cmd = Command.sidecar("bin/fitstats-engine", [
+          "--dob", formData.dob,
+          "--gender", formData.gender,
+          "--height", String(heightVal),
+          "--weight", String(weightVal),
+          "--data-dir", pathVal,
+          "--out-dir", outDir
+        ]);
+        const output = await cmd.execute();
+        if (output.code === 0) {
+          onSuccess();
+        } else {
+          console.error("Sidecar execution failed:", output.stderr);
+          alert("Error executing ETL: " + output.stderr);
+        }
+      } catch (err) {
+        console.error("Tauri sidecar invocation exception:", err);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+    } else {
+      try {
+        const resp = await fetch(`http://localhost:8000/api/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dob: formData.dob,
+            gender: formData.gender,
+            height: heightVal,
+            weight: weightVal,
+            data_path: pathVal,
+          }),
+        });
+
+        if (!resp.ok) {
+          console.error("Failed to start processing");
+        } else {
+          onSuccess();
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -204,6 +286,7 @@ export function ConfigForm({
             max="250"
             required
             value={formData.height}
+            onFocus={(e) => e.target.select()}
             onChange={(e) => {
               setFormData({ ...formData, height: e.target.value });
               setTouched({ ...touched, height: true });
@@ -221,6 +304,7 @@ export function ConfigForm({
             step="0.1"
             required
             value={formData.weight}
+            onFocus={(e) => e.target.select()}
             onChange={(e) => {
               setFormData({ ...formData, weight: e.target.value });
               setTouched({ ...touched, weight: true });
@@ -280,6 +364,7 @@ export function ConfigForm({
             type="text"
             placeholder="./data"
             value={formData.data_path}
+            onFocus={(e) => e.target.select()}
             onChange={(e) => {
               setFormData({ ...formData, data_path: e.target.value });
               setPathStatus("idle");
