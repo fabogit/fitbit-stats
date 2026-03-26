@@ -7,11 +7,13 @@ import { PhysiologyChart } from "../charts/PhysiologyChart";
 import { ChartWrapper } from "../ChartWrapper";
 import { useAppSelector } from "@/store/store";
 import { NoDataState } from "../NoDataState";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
+import { memo } from "react";
 
 type ChartKey = "trend" | "physiology" | "sleep" | "energy" | "weight";
 
-export function TimelineView({ onAction }: { onAction?: () => void }) {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+export const TimelineView = memo(function TimelineView({ onAction }: { onAction?: () => void }) {
+  const filteredData = useAppSelector(selectFilteredData);
   const SYNC_ID = "main-timeline-sync";
   const STORAGE_KEY = "fitbit-timeline-order";
 
@@ -87,4 +89,4 @@ export function TimelineView({ onAction }: { onAction?: () => void }) {
       ))}
     </div>
   );
-}
+});

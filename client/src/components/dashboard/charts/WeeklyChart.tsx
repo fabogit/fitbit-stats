@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import {
   BarChart,
   Bar,
@@ -14,6 +14,7 @@ import { useAppSelector } from "@/store/store";
 import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { parseISO, getDay } from "date-fns";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
 type DayStat = {
   sum: number;
@@ -21,8 +22,8 @@ type DayStat = {
   label: string;
 };
 
-export function WeeklyChart() {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+export const WeeklyChart = memo(function WeeklyChart() {
+  const filteredData = useAppSelector(selectFilteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
   const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
 
@@ -71,11 +72,9 @@ export function WeeklyChart() {
             <span>
               Average Readiness Score by day of the week.
               <br />
-              <strong className="text-emerald-500">Positive:</strong> Generally
-              recovered.
+              <strong className="text-emerald-500">Positive:</strong> Generally recovered.
               <br />
-              <strong className="text-rose-500">Negative:</strong> Generally
-              tired/stressed.
+              <strong className="text-rose-500">Negative:</strong> Generally tired/stressed.
             </span>
           }
         />
@@ -101,11 +100,7 @@ export function WeeklyChart() {
               }}
               formatter={(value: number | string | readonly (number | string)[] | undefined) => {
                 const numValue = Number(value);
-
-                const displayValue = !isNaN(numValue)
-                  ? numValue.toFixed(1)
-                  : "0";
-
+                const displayValue = !isNaN(numValue) ? numValue.toFixed(1) : "0";
                 return [displayValue, "Avg Score"];
               }}
             />
@@ -123,4 +118,4 @@ export function WeeklyChart() {
       </div>
     </div>
   );
-}
+});

@@ -119,4 +119,8 @@ const dashboardSlice = createSlice({
 });
 
 export const { setDateRange, resetFilter } = dashboardSlice.actions;
+
+export const selectFilteredData = (state: { dashboard: DashboardState }) => state.dashboard.filteredData;
+export const selectDashboardStatus = (state: { dashboard: DashboardState }) => state.dashboard.status;
+
 export default dashboardSlice.reducer;
