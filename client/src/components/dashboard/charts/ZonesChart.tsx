@@ -42,7 +42,7 @@ export function ZonesChart() {
   const totalMinutes = chartData.reduce((acc, curr) => acc + curr.value, 0);
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4 shadow-sm flex flex-col h-full">
+    <div className="bg-card border border-border rounded-xl p-4 md:p-6 shadow-sm flex flex-col h-full">
       <div className="flex items-center mb-4">
         <h3 className="text-lg font-semibold text-card-foreground">
           Activity Zones
@@ -61,16 +61,16 @@ export function ZonesChart() {
         />
       </div>
 
-      <div className="flex-1 min-h-[300px] w-full flex items-center justify-center">
+      <div className="flex-1 min-h-[250px] w-full flex items-center justify-center">
         {totalMinutes > 0 ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-            <PieChart>
+            <PieChart margin={{ top: -20, bottom: 10 }}>
               <Pie
                 data={chartData}
                 cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={80}
+                cy="45%"
+                innerRadius={50}
+                outerRadius={70}
                 paddingAngle={5}
                 dataKey="value"
                 stroke="hsl(var(--card))"
@@ -100,7 +100,7 @@ export function ZonesChart() {
                   return [displayValue, "Duration"];
                 }}
               />
-              <Legend verticalAlign="bottom" height={36} />
+              <Legend verticalAlign="bottom" align="center" iconType="circle" />
             </PieChart>
           </ResponsiveContainer>
         ) : (

@@ -38,7 +38,7 @@ export function ActivityHeatmap() {
   const blockMargin = isMobile ? 2 : 3;
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4 md:p-6 shadow-sm overflow-hidden">
+    <div className="bg-card border border-border rounded-xl p-4 md:p-6 shadow-sm overflow-hidden h-full flex flex-col">
       <div className="flex items-center mb-4 md:mb-6">
         <h3 className="text-base md:text-lg font-semibold text-card-foreground">
           Workout Consistency

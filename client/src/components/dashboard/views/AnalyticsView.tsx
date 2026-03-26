@@ -4,6 +4,9 @@ import { ZonesChart } from "../charts/ZonesChart";
 import { ScatterChart } from "../charts/ScatterChart";
 import { WeeklyChart } from "../charts/WeeklyChart";
 import { ActivityHeatmap } from "../charts/ActivityHeatmap";
+import { SleepCompositionChart } from "../charts/SleepCompositionChart";
+import { RHRCorrelationChart } from "../charts/RHRCorrelationChart";
+import { SedentaryTrendChart } from "../charts/SedentaryTrendChart";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/utils";
 
@@ -15,15 +18,15 @@ export function AnalyticsView({ onAction }: { onAction?: () => void }) {
     return <NoDataState onAction={onAction} />;
   }
 
-  const chartHeight = isMobile ? "h-[250px]" : "h-[320px]";
+  const chartHeight = isMobile ? "h-[300px]" : "h-[380px]";
 
   return (
-    <div className="space-y-4 md:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+    <div className="space-y-6 md:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10 max-w-7xl mx-auto">
       {/* 1. Heatmap (Full Width) */}
       <ActivityHeatmap />
 
       {/* 2. Grid for Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
         <div className={cn("lg:col-span-1", chartHeight)}>
           <ZonesChart />
         </div>
@@ -31,8 +34,20 @@ export function AnalyticsView({ onAction }: { onAction?: () => void }) {
           <ScatterChart />
         </div>
 
-        <div className={cn("lg:col-span-2 h-[300px] md:h-[350px]")}>
+        <div className={cn("lg:col-span-1", chartHeight)}>
+          <RHRCorrelationChart />
+        </div>
+        <div className={cn("lg:col-span-1", chartHeight)}>
+          <SedentaryTrendChart />
+        </div>
+
+        <div className="lg:col-span-2 h-[350px] md:h-[400px]">
           <WeeklyChart />
+        </div>
+
+        {/* 3. Detailed Sleep Analysis (Full Width) */}
+        <div className="lg:col-span-2 h-[450px]">
+          <SleepCompositionChart />
         </div>
       </div>
     </div>
