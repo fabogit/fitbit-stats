@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import {
   BarChart,
   Bar,
@@ -14,19 +14,21 @@ import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 export const SleepCompositionChart = memo(function SleepCompositionChart() {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector((state) => state.dashboard.filteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
 
   const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
 
   // Data mapping: ensure we have minutes for each stage
-  const chartData = filteredData.map((d) => ({
-    date: d.date,
-    Deep: d.sleep_deep || 0,
-    REM: d.sleep_rem || 0,
-    Light: d.sleep_light || 0,
-    Awake: d.sleep_awake || 0,
-  }));
+  const chartData = useMemo(() => {
+    return filteredData.map((d) => ({
+      date: d.date,
+      Deep: d.sleep_deep || 0,
+      REM: d.sleep_rem || 0,
+      Light: d.sleep_light || 0,
+      Awake: d.sleep_awake || 0,
+    }));
+  }, [filteredData]);
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 md:p-6 shadow-sm h-full flex flex-col">

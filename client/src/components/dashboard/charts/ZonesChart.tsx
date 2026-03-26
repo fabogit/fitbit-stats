@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import {
   PieChart,
   Pie,
@@ -10,10 +10,12 @@ import {
 import { useAppSelector } from "@/store/store";
 import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
-export function ZonesChart() {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+export const ZonesChart = memo(function ZonesChart() {
+  const filteredData = useAppSelector(selectFilteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
+  
   const chartColors = useMemo(() => {
     return resolvedTheme === "dark"
       ? ["#94a3b8", "#facc15", "#fb923c", "#f87171"]
@@ -39,7 +41,7 @@ export function ZonesChart() {
     ];
   }, [filteredData]);
 
-  const totalMinutes = chartData.reduce((acc, curr) => acc + curr.value, 0);
+  const totalMinutes = useMemo(() => chartData.reduce((acc, curr) => acc + curr.value, 0), [chartData]);
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 md:p-6 shadow-sm flex flex-col h-full">
@@ -51,11 +53,8 @@ export function ZonesChart() {
           side="bottom"
           content={
             <span>
-              Total minutes spent in each intensity zone for the selected
-              period.
-              <br />
-              <strong className="text-indigo-500">Insight:</strong> High
-              "Sedentary" time can offset workout benefits.
+              Total minutes spent in each intensity zone for the selected period.<br />
+              <strong className="text-indigo-500">Insight:</strong> High "Sedentary" time can offset workout benefits.
             </span>
           }
         />
@@ -92,11 +91,7 @@ export function ZonesChart() {
                 itemStyle={{ color: "hsl(var(--foreground))" }}
                 formatter={(value: number | string | readonly (number | string)[] | undefined) => {
                   const numValue = Number(value);
-
-                  const displayValue = !isNaN(numValue)
-                    ? numValue.toString()
-                    : "0";
-
+                  const displayValue = !isNaN(numValue) ? numValue.toString() : "0";
                   return [displayValue, "Duration"];
                 }}
               />
@@ -111,4 +106,4 @@ export function ZonesChart() {
       </div>
     </div>
   );
-}
+});

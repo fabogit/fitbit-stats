@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -13,16 +13,18 @@ import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 export const SedentaryTrendChart = memo(function SedentaryTrendChart() {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector((state) => state.dashboard.filteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
 
   const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
 
-  const chartData = filteredData.map((d) => ({
-    date: d.date,
-    sedentary: d.sedentary_minutes || 0,
-    active: (d.lightly_active_minutes || 0) + (d.moderately_active_minutes || 0) + (d.very_active_minutes || 0),
-  }));
+  const chartData = useMemo(() => {
+    return filteredData.map((d) => ({
+      date: d.date,
+      sedentary: d.sedentary_minutes || 0,
+      active: (d.lightly_active_minutes || 0) + (d.moderately_active_minutes || 0) + (d.very_active_minutes || 0),
+    }));
+  }, [filteredData]);
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 md:p-6 shadow-sm h-full flex flex-col">

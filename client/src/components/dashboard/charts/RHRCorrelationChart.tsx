@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import {
   ScatterChart,
   Scatter,
@@ -15,19 +15,21 @@ import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 export const RHRCorrelationChart = memo(function RHRCorrelationChart() {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector((state) => state.dashboard.filteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
 
   const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
 
   // Filter data to only include records with both RHR and Sleep Score
-  const chartData = filteredData
-    .filter((d) => d.resting_bpm !== null && d.overall_score !== null)
-    .map((d) => ({
-      rhr: d.resting_bpm,
-      sleep: d.overall_score,
-      date: d.date,
-    }));
+  const chartData = useMemo(() => {
+    return filteredData
+      .filter((d) => d.resting_bpm !== null && d.overall_score !== null)
+      .map((d) => ({
+        rhr: d.resting_bpm,
+        sleep: d.overall_score,
+        date: d.date,
+      }));
+  }, [filteredData]);
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 md:p-6 shadow-sm h-full flex flex-col">
@@ -82,7 +84,7 @@ export const RHRCorrelationChart = memo(function RHRCorrelationChart() {
               }}
             />
             <Scatter name="Days" data={chartData} fill="#f43f5e">
-              {chartData.map((_entry, index) => (
+              {chartData.map((_entry: { rhr: number | null; sleep: number | null }, index: number) => (
                 <Cell 
                   key={`cell-${index}`} 
                   fill={(_entry.sleep ?? 0) > 80 ? "#10b981" : "#f43f5e"} 

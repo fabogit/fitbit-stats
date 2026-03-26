@@ -12,6 +12,8 @@ import {
 } from "recharts";
 import { useAppSelector } from "@/store/store";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
+import { useMemo } from "react";
 
 interface PhysiologyChartProps {
   syncId?: string;
@@ -21,12 +23,12 @@ interface PhysiologyChartProps {
 export const PhysiologyChart = memo(function PhysiologyChart({
   syncId,
 }: PhysiologyChartProps) {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector(selectFilteredData);
 
-  const cleanData = filteredData.map((d) => ({
+  const cleanData = useMemo(() => filteredData.map((d) => ({
     ...d,
     rmssd: d.rmssd && d.rmssd > 0 ? d.rmssd : null,
-  }));
+  })), [filteredData]);
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
