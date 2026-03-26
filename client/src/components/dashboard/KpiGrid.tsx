@@ -2,6 +2,7 @@ import { type ReactNode, useMemo } from "react";
 import { useAppSelector } from "@/store/store";
 import {
   calculateAverage,
+  calculateRecoveryScore,
   formatNumber,
   getLastValidMetric,
 } from "@/lib/analytics";
@@ -38,7 +39,18 @@ export function KpiGrid() {
     avgSpO2,
     avgStress,
     currentReadiness,
+    recoveryScore,
     qualityPct,
+  }: {
+    avgRHR: string;
+    avgSleep: string;
+    avgCals: string;
+    avgHRV: string;
+    avgSpO2: string;
+    avgStress: string;
+    currentReadiness: number | null;
+    recoveryScore: number | null;
+    qualityPct: string;
   } = useMemo(() => {
     if (filteredData.length === 0) {
       return {
@@ -49,6 +61,7 @@ export function KpiGrid() {
         avgSpO2: "--",
         avgStress: "--",
         currentReadiness: null,
+        recoveryScore: null,
         qualityPct: "--",
       };
     }
@@ -64,6 +77,8 @@ export function KpiGrid() {
       filteredData,
       "readiness_raw"
     ) as number | null;
+
+    const recoveryScore = calculateRecoveryScore(filteredData);
 
     const sleepDays = filteredData.filter(
       (d) => d.sleep_deep + d.sleep_light + d.sleep_rem + d.sleep_awake > 0
@@ -95,6 +110,7 @@ export function KpiGrid() {
       avgSpO2,
       avgStress,
       currentReadiness,
+      recoveryScore,
       qualityPct,
     };
   }, [filteredData]);
@@ -104,7 +120,25 @@ export function KpiGrid() {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div className="max-w-7xl mx-auto px-4 md:px-0">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+      {/* 0. Recovery Score */}
+      <KpiCard
+        title="Recovery Score"
+        value={recoveryScore !== null ? recoveryScore : "--"}
+        icon={<Zap className="w-5 h-5 text-indigo-500" />}
+        colorClass={getRecoveryColor(recoveryScore)}
+        tooltipContent={
+          <span>
+            Daily state based on HRV, RHR and Sleep.
+            <br />
+            80-100: Ideal for training.
+            <br />
+            &lt;60: Take it easy.
+          </span>
+        }
+      />
+
       {/* 1. Readiness */}
       <KpiCard
         title="Readiness"
@@ -209,6 +243,7 @@ export function KpiGrid() {
         icon={<TrendingUp className="w-5 h-5 text-orange-500" />}
         tooltipContent={<span>Total Daily Burn (BMR + Active).</span>}
       />
+      </div>
     </div>
   );
 }
@@ -243,6 +278,14 @@ function KpiCard({
       </div>
     </div>
   );
+}
+
+function getRecoveryColor(val: number | null) {
+  if (val === null) return "text-muted-foreground";
+  if (val >= 80) return "text-indigo-600 dark:text-indigo-400 font-extrabold";
+  if (val >= 70) return "text-emerald-600 dark:text-emerald-400";
+  if (val < 60) return "text-rose-600 dark:text-rose-400";
+  return "text-blue-600 dark:text-blue-400";
 }
 
 function getReadinessColor(val: number | null) {

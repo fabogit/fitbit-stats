@@ -45,7 +45,7 @@ export function ScatterChart() {
     }));
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
+    <div className="bg-card border border-border rounded-xl p-4 md:p-6 shadow-sm h-full flex flex-col">
       <div className="flex items-center mb-4">
         <h3 className="text-lg font-semibold text-card-foreground">
           Correlation: Activity vs Sleep
@@ -78,6 +78,7 @@ export function ScatterChart() {
               name="Calories"
               stroke={axisColor}
               tick={{ fontSize: 12 }}
+              tickFormatter={(val) => Math.round(val).toLocaleString()}
               label={{
                 value: "Calories Burned",
                 position: "insideBottom",
@@ -93,6 +94,7 @@ export function ScatterChart() {
               stroke={axisColor}
               tick={{ fontSize: 12 }}
               domain={[50, 100]}
+              tickFormatter={(val) => Math.round(val).toString()}
               label={{
                 value: "Sleep Score",
                 angle: -90,
