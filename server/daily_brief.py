@@ -38,22 +38,46 @@ def get_status_emoji(value, mean, std, metric_type='lower_is_better'):
 import argparse
 import json
 
-def load_metrics():
-    """ Loads user metrics from session_config.json if available. """
-    metrics = {"age": 38, "gender": "male", "height": 180}
+def calculate_age(dob_str, target_date):
+    """ Calculates age correctly at the given target_date. """
+    try:
+        dob = pd.to_datetime(dob_str)
+        age = target_date.year - dob.year - ((target_date.month, target_date.day) < (dob.month, dob.day))
+        return age
+    except:
+        return 38 # Fallback
+
+def load_metrics(target_date=None):
+    """ Loads user metrics from session_config.json and calculates age relative to target_date. """
+    metrics = {"age": None, "gender": None, "height": None}
     if os.path.exists("session_config.json"):
         try:
             with open("session_config.json", "r") as f:
                 sc = json.load(f)
-                metrics["age"] = sc.get("age", metrics["age"])
-                metrics["gender"] = sc.get("gender", metrics["gender"])
-                metrics["height"] = sc.get("height", metrics["height"])
+                dob = sc.get("dob")
+                if dob and target_date:
+                    metrics["age"] = calculate_age(dob, target_date)
+                else:
+                    metrics["age"] = sc.get("age")
+                
+                metrics["gender"] = sc.get("gender")
+                metrics["height"] = sc.get("height")
         except: pass
     return metrics
 
 def generate_briefing(target_date_str=None):
     df = load_data()
-    metrics = load_metrics()
+    
+    # Pre-select date to calculate age correctly
+    if target_date_str:
+        try:
+            t_date = pd.to_datetime(target_date_str)
+        except:
+            t_date = df.index[-1]
+    else:
+        t_date = df.index[-1]
+
+    metrics = load_metrics(t_date)
 
     # Select the day
     if target_date_str:
