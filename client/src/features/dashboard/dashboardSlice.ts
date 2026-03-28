@@ -33,7 +33,7 @@ export const fetchHealthData = createAsyncThunk(
           const content = await readTextFile("dashboard_data.json", { baseDir: BaseDirectory.AppData });
           return JSON.parse(content) as HealthRecord[];
         } catch (fileErr) {
-          console.warn("dashboard_data.json non trovato localmente. (Normale al primo avvio)", fileErr);
+          console.warn("dashboard_data.json not found locally. (Normal on first run)", fileErr);
           return [];
         }
       } else {

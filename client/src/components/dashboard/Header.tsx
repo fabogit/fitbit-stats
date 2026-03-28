@@ -26,7 +26,7 @@ export function Header({
   const currentTitle = tabLabels[activeTab] || "Dashboard";
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border h-16 flex items-center px-4 md:px-8">
+    <header className="sticky top-0 z-40 w-full bg-indigo-50/90 dark:bg-indigo-950/80 backdrop-blur-xl supports-[backdrop-filter]:bg-indigo-50/70 dark:supports-[backdrop-filter]:bg-indigo-950/60 border-b border-indigo-100/50 dark:border-indigo-900/50 h-16 flex items-center px-4 md:px-8 shadow-md before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-gradient-to-r before:from-primary before:via-indigo-500 before:to-primary">
       {/* Left Section: Recalculate */}
       <div className="flex-1 flex items-center">
         <button

@@ -27,10 +27,10 @@ export function ConfigForm({
 }: ConfigFormProps) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    dob: "2000-01-01",
-    gender: "male",
-    height: "175",
-    weight: "75",
+    dob: "",
+    gender: "",
+    height: "",
+    weight: "",
     data_path: "./data",
   });
   const [touched, setTouched] = useState({ dob: false, height: false, weight: false });
@@ -138,7 +138,7 @@ export function ConfigForm({
           setPathError("");
         } else {
           setPathStatus("invalid");
-          setPathError("Directory non trovata sul filesystem locale.");
+          setPathError("Directory not found on local filesystem.");
         }
       } catch {
         setPathStatus("invalid");
@@ -159,7 +159,7 @@ export function ConfigForm({
         }
       } catch {
         setPathStatus("invalid");
-        setPathError("API server docker irraggiungibile.");
+        setPathError("Docker API server unreachable.");
       }
     }
   }, []);
@@ -271,7 +271,8 @@ export function ConfigForm({
               setFormData({ ...formData, dob: e.target.value });
               setTouched({ ...touched, dob: true });
             }}
-            className={`h-12 text-lg transition-all duration-300 ${!touched.dob ? "text-muted-foreground/40" : ""}`}
+            className={`h-12 text-lg transition-all duration-300 ${!formData.dob ? "text-muted-foreground/40" : ""}`}
+            placeholder="YYYY-MM-DD"
           />
         </div>
         <div className="space-y-2 text-left">
@@ -282,13 +283,14 @@ export function ConfigForm({
             min="50"
             max="250"
             required
+            placeholder="e.g. 175 cm"
             value={formData.height}
             onFocus={(e) => e.target.select()}
             onChange={(e) => {
               setFormData({ ...formData, height: e.target.value });
               setTouched({ ...touched, height: true });
             }}
-            className={`h-12 text-lg transition-all duration-300 ${!touched.height ? "text-muted-foreground/40" : ""}`}
+            className={`h-12 text-lg transition-all duration-300 ${!formData.height ? "text-muted-foreground/40" : ""}`}
           />
         </div>
         <div className="space-y-2 text-left">
@@ -300,13 +302,14 @@ export function ConfigForm({
             max="300"
             step="0.1"
             required
+            placeholder="e.g. 70.0 kg"
             value={formData.weight}
             onFocus={(e) => e.target.select()}
             onChange={(e) => {
               setFormData({ ...formData, weight: e.target.value });
               setTouched({ ...touched, weight: true });
             }}
-            className={`h-12 text-lg transition-all duration-300 ${!touched.weight ? "text-muted-foreground/40" : ""}`}
+            className={`h-12 text-lg transition-all duration-300 ${!formData.weight ? "text-muted-foreground/40" : ""}`}
           />
         </div>
       </div>
