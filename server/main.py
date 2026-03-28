@@ -47,9 +47,9 @@ def main():
     if args.end_date: config.END_DATE = args.end_date
 
     # Validation: Ensure we have the metrics
-    if not config.USER_DOB or not config.USER_HEIGHT_CM or not config.USER_GENDER:
-        print("\n[main.py] ERROR: Biometric metrics (dob, height, gender) are not set.")
-        print("Please provide them via CLI or ensure session_config.json exists.\n")
+    if not config.USER_DOB or not config.USER_HEIGHT_CM or not config.USER_GENDER or not config.USER_WEIGHT_KG:
+        print("\n[main.py] ERROR: Biometric metrics (dob, height, weight, gender) are not set.")
+        print("Please provide them via CLI or ensure session_config.json contains them.\n")
         return
 
     # 1. Load & Merge
