@@ -189,8 +189,8 @@ export function ConfigForm({
     setLoading(true);
     try {
       if (isTauri()) {
-        try { await remove("session_config.json", { baseDir: BaseDirectory.AppData }); } catch (e) {}
-        try { await remove("dashboard_data.json", { baseDir: BaseDirectory.AppData }); } catch (e) {}
+        try { await remove("session_config.json", { baseDir: BaseDirectory.AppData }); } catch { /* ignore */ }
+        try { await remove("dashboard_data.json", { baseDir: BaseDirectory.AppData }); } catch { /* ignore */ }
       } else {
         await fetch("http://localhost:8000/api/clear", { method: "DELETE" });
       }
