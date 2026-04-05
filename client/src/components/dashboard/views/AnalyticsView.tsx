@@ -4,7 +4,6 @@ import { ZonesChart } from "../charts/ZonesChart";
 import { ScatterChart } from "../charts/ScatterChart";
 import { WeeklyChart } from "../charts/WeeklyChart";
 import { ActivityHeatmap } from "../charts/ActivityHeatmap";
-import { SleepCompositionChart } from "../charts/SleepCompositionChart";
 import { RHRCorrelationChart } from "../charts/RHRCorrelationChart";
 import { SedentaryTrendChart } from "../charts/SedentaryTrendChart";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -45,10 +44,6 @@ export function AnalyticsView({ onAction }: { onAction?: () => void }) {
           <WeeklyChart />
         </div>
 
-        {/* 3. Detailed Sleep Analysis (Full Width) */}
-        <div className="lg:col-span-2 h-[450px]">
-          <SleepCompositionChart />
-        </div>
       </div>
     </div>
   );
