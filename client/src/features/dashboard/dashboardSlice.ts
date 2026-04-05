@@ -14,6 +14,7 @@ interface DashboardState {
   dateRange: DateRange | null;
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
+  isProcessing: boolean;
 }
 
 const initialState: DashboardState = {
@@ -22,6 +23,7 @@ const initialState: DashboardState = {
   dateRange: null,
   status: "idle",
   error: null,
+  isProcessing: false,
 };
 
 export const fetchHealthData = createAsyncThunk(
@@ -81,6 +83,9 @@ const dashboardSlice = createSlice({
         state.filteredData = state.data;
       }
     },
+    setIsProcessing(state, action: PayloadAction<boolean>) {
+      state.isProcessing = action.payload;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -118,7 +123,7 @@ const dashboardSlice = createSlice({
   },
 });
 
-export const { setDateRange, resetFilter } = dashboardSlice.actions;
+export const { setDateRange, resetFilter, setIsProcessing } = dashboardSlice.actions;
 
 export const selectFilteredData = (state: { dashboard: DashboardState }) => state.dashboard.filteredData;
 export const selectDashboardStatus = (state: { dashboard: DashboardState }) => state.dashboard.status;

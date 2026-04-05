@@ -1,5 +1,6 @@
-import { BarChart3, Calculator, PlusCircle } from "lucide-react";
+import { BarChart3, Calculator, PlusCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAppSelector } from "../../store/store";
 
 interface NoDataStateProps {
   onAction?: () => void;
@@ -12,6 +13,22 @@ export function NoDataState({
   title = "No Data Calculated Yet", 
   description = "Connect your Fitbit export folder and run your first calculation to see your health analytics."
 }: NoDataStateProps) {
+  const isProcessing = useAppSelector((state) => state.dashboard.isProcessing);
+
+  if (isProcessing) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center bg-card/50 backdrop-blur-sm border border-border/50 rounded-3xl shadow-2xl animate-in fade-in zoom-in duration-700 max-w-2xl mx-auto my-12">
+        <Loader2 className="w-16 h-16 text-primary animate-spin mb-6" />
+        <h3 className="text-3xl font-extrabold tracking-tight mb-4 bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60">
+          Calculating Health Stats
+        </h3>
+        <p className="text-muted-foreground text-lg mb-8 max-w-md leading-relaxed">
+          Please wait while the engine crunches thousands of metrics. This process may take a few minutes.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center justify-center p-12 text-center bg-card/50 backdrop-blur-sm border border-border/50 rounded-3xl shadow-2xl animate-in fade-in zoom-in duration-700 max-w-2xl mx-auto my-12">
       <div className="relative mb-8">

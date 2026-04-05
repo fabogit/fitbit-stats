@@ -38,7 +38,6 @@ export function SettingsModal({ isOpen, onOpenChange }: SettingsModalProps) {
           <ConfigForm 
             onSuccess={() => {
               onOpenChange(false);
-              dispatch(fetchHealthData());
             }} 
             submitLabel="Update & Recalculate" 
           />
