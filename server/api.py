@@ -1,16 +1,13 @@
-from fastapi import FastAPI, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
 import subprocess
 import os
 import sys
-import glob
+import json
+from pydantic import BaseModel, Field, validator
+from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 # Change working directory so relative paths in config.py work correctly
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
-import json
-from fastapi import FastAPI, HTTPException
 
 app = FastAPI(title="FitStats Config API")
 
@@ -23,12 +20,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class ConfigPayload(BaseModel):
     dob: str
     gender: str
     height: int = Field(..., gt=40, lt=260)
     weight: float = Field(..., gt=20, lt=300)
     data_path: str
+
 
 @app.get("/api/check-path")
 async def check_path(path: str):
@@ -41,12 +40,13 @@ async def check_path(path: str):
 
     if not os.path.exists(target_path):
         return {"valid": False, "reason": f"Path '{target_path}' does not exist"}
-    
+
     return {"valid": True, "path": target_path}
 
 
 @app.post("/api/start")
 async def start_etl(payload: ConfigPayload):
+    """Saves biometric configurations and initiates the main ETL pipeline synchronously."""
     # Save to session_config.json to persist across runs and for watcher
     session_config = {
         "dob": payload.dob,
@@ -57,7 +57,7 @@ async def start_etl(payload: ConfigPayload):
     }
     with open("session_config.json", "w") as f:
         json.dump(session_config, f)
-    
+
     # Run ETL via CLI
     cmd = [
         sys.executable,
@@ -68,10 +68,11 @@ async def start_etl(payload: ConfigPayload):
         "--weight", str(payload.weight),
         "--data-dir", payload.data_path
     ]
-    
+
     try:
         # Run ETL and wait for it to complete so the client can fetch the result immediately
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=True)
         return {"status": "success", "message": "ETL process completed successfully"}
     except subprocess.CalledProcessError as e:
         print(f"ETL Error: {e.stderr}")
@@ -82,25 +83,31 @@ async def start_etl(payload: ConfigPayload):
 
 @app.get("/api/config")
 async def get_config():
+    """Retrieves the current user session configuration if it exists."""
     if os.path.exists("session_config.json"):
         with open("session_config.json", "r") as f:
             return json.load(f)
     return {}
 
+
 @app.post("/api/brief")
 async def run_brief(payload: dict = None):
+    """Executes the daily briefing script to generate a textual health summary."""
     # payload can contain {"date": "YYYY-MM-DD"}
     cmd = [sys.executable, "daily_brief.py"]
     if payload and payload.get("date"):
         cmd.extend(["--date", payload["date"]])
-    
+
     try:
         # For brief, we want the output back
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False)
         return {"status": "done", "output": result.stdout}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/health")
 async def health():
+    """Simple health check endpoint to verify API uptime."""
     return {"status": "ok"}

@@ -1,3 +1,5 @@
+import argparse
+import json
 import pandas as pd
 import os
 import sys
@@ -7,7 +9,9 @@ import sys
 # ==========================================
 DATA_FILE = "fitbit_analysis.csv"
 
+
 def load_data():
+    """Loads the processed fitbit_analysis.csv dataset and indexes it by date."""
     if not os.path.exists(DATA_FILE):
         print(f"Error: {DATA_FILE} not found. Please run main.py first.")
         sys.exit(1)
@@ -16,6 +20,7 @@ def load_data():
     df['date'] = pd.to_datetime(df['date'])
     df.set_index('date', inplace=True)
     return df
+
 
 def get_status_emoji(value, mean, std, metric_type='lower_is_better'):
     """
@@ -27,25 +32,29 @@ def get_status_emoji(value, mean, std, metric_type='lower_is_better'):
     z_score = (value - mean) / std
 
     if metric_type == 'lower_is_better':
-        if z_score < -1.0: return "🟢 EXCELLENT"
-        if z_score > 1.0:  return "🔴 WARNING"
+        if z_score < -1.0:
+            return "🟢 EXCELLENT"
+        if z_score > 1.0:
+            return "🔴 WARNING"
         return "⚪️ NORMAL"
-    else: # higher_is_better (Sleep, HRV)
-        if z_score > 1.0:  return "🟢 EXCELLENT"
-        if z_score < -1.0: return "🔴 WARNING"
+    else:  # higher_is_better (Sleep, HRV)
+        if z_score > 1.0:
+            return "🟢 EXCELLENT"
+        if z_score < -1.0:
+            return "🔴 WARNING"
         return "⚪️ NORMAL"
 
-import argparse
-import json
 
 def calculate_age(dob_str, target_date):
     """ Calculates age correctly at the given target_date. """
     try:
         dob = pd.to_datetime(dob_str)
-        age = target_date.year - dob.year - ((target_date.month, target_date.day) < (dob.month, dob.day))
+        age = target_date.year - dob.year - \
+            ((target_date.month, target_date.day) < (dob.month, dob.day))
         return age
     except:
-        return 38 # Fallback
+        return 38  # Fallback
+
 
 def load_metrics(target_date=None):
     """ Loads user metrics from session_config.json and calculates age relative to target_date. """
@@ -59,15 +68,18 @@ def load_metrics(target_date=None):
                     metrics["age"] = calculate_age(dob, target_date)
                 else:
                     metrics["age"] = sc.get("age")
-                
+
                 metrics["gender"] = sc.get("gender")
                 metrics["height"] = sc.get("height")
-        except: pass
+        except:
+            pass
     return metrics
 
+
 def generate_briefing(target_date_str=None):
+    """Generates a CLI-based daily briefing summary containing health, sleep, and recovery metrics."""
     df = load_data()
-    
+
     # Pre-select date to calculate age correctly
     if target_date_str:
         try:
@@ -101,7 +113,7 @@ def generate_briefing(target_date_str=None):
     print(f" 📅 DAILY BRIEFING: {display_date}")
     print(f"     Profile: {metrics['age']}yo {metrics['gender']}")
     print(f"==========================================\n")
-    
+
     # --- 1. HEALTH & RECOVERY ---
     print("❤️  PHYSIOLOGY & RECOVERY")
 
@@ -109,13 +121,15 @@ def generate_briefing(target_date_str=None):
     rhr = latest_day.get('resting_bpm')
     if pd.notna(rhr):
         print(f"   • RHR: {rhr:.1f} bpm")
-        print(f"     Status: {get_status_emoji(rhr, df['resting_bpm'].mean(), df['resting_bpm'].std(), 'lower_is_better')}")
+        print(
+            f"     Status: {get_status_emoji(rhr, df['resting_bpm'].mean(), df['resting_bpm'].std(), 'lower_is_better')}")
 
     # HRV
     hrv = latest_day.get('rmssd')
     if pd.notna(hrv):
         print(f"   • HRV (rMSSD): {hrv:.1f} ms")
-        print(f"     Status: {get_status_emoji(hrv, df['rmssd'].mean(), df['rmssd'].std(), 'higher_is_better')}")
+        print(
+            f"     Status: {get_status_emoji(hrv, df['rmssd'].mean(), df['rmssd'].std(), 'higher_is_better')}")
 
     # Stress
     stress = latest_day.get('stress_score')
@@ -127,7 +141,8 @@ def generate_briefing(target_date_str=None):
     sleep_score = latest_day.get('overall_score')
     if pd.notna(sleep_score):
         print(f"   • Score: {sleep_score:.0f} / 100")
-        print(f"     Status: {get_status_emoji(sleep_score, df['overall_score'].mean(), df['overall_score'].std(), 'higher_is_better')}")
+        print(
+            f"     Status: {get_status_emoji(sleep_score, df['overall_score'].mean(), df['overall_score'].std(), 'higher_is_better')}")
 
         # Sleep Composition
         deep = latest_day.get('sleep_deep', 0)
@@ -168,6 +183,7 @@ def generate_briefing(target_date_str=None):
         print(f"   • Weight: {weight:.1f} Kg")
 
     print(f"\n==========================================")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -14,4 +14,5 @@ USER_DOB = os.environ.get("USER_DOB", "")
 USER_GENDER = os.environ.get("USER_GENDER", "")
 
 # Output paths
-CLIENT_PUBLIC_DIR = os.environ.get("CLIENT_PUBLIC_DIR", os.path.join("..", "client", "public"))
+CLIENT_PUBLIC_DIR = os.environ.get(
+    "CLIENT_PUBLIC_DIR", os.path.join("..", "client", "public"))

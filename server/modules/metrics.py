@@ -1,5 +1,6 @@
 import config
 import pandas as pd
+import numpy as np
 from typing import Literal
 
 
@@ -9,11 +10,14 @@ def calculate_readiness(df):
         print("Warning: Missing Sleep or RHR columns for Readiness.")
         return df
 
-    sleep_z = (df['overall_score'] - df['overall_score'].mean()) / df['overall_score'].std()
-    rhr_z = (df['resting_bpm'] - df['resting_bpm'].mean()) / df['resting_bpm'].std()
+    sleep_z = (df['overall_score'] - df['overall_score'].mean()
+               ) / df['overall_score'].std()
+    rhr_z = (df['resting_bpm'] - df['resting_bpm'].mean()) / \
+        df['resting_bpm'].std()
 
     df['readiness_raw'] = sleep_z - rhr_z
     return df
+
 
 def calculate_metabolic_metrics(df):
     """ Calculates BMR (Mifflin-St Jeor), Active Calories, and Intensity. """
@@ -39,18 +43,22 @@ def calculate_metabolic_metrics(df):
             dob = pd.to_datetime(config.USER_DOB)
             # df.index is expected to be a DatetimeIndex
             age_series = (df.index - dob).days / 365.25
-            df['bmr'] = (10 * df['weight_filled']) + (6.25 * config.USER_HEIGHT_CM) - (5 * age_series) + s
+            df['bmr'] = (10 * df['weight_filled']) + \
+                (6.25 * config.USER_HEIGHT_CM) - (5 * age_series) + s
         except Exception as e:
             print(f"BMR Error: {e}")
             df['bmr'] = 0.0
 
         # 3. Active Calories
-        df['active_calories'] = (df['calories_total'] - df['bmr']).clip(lower=0)
+        df['active_calories'] = (
+            df['calories_total'] - df['bmr']).clip(lower=0)
 
     # 4. Intensity Index
-    cols = ['lightly_active_minutes', 'moderately_active_minutes', 'very_active_minutes']
+    cols = ['lightly_active_minutes',
+            'moderately_active_minutes', 'very_active_minutes']
     for col in cols:
-        if col not in df.columns: df[col] = 0.0
+        if col not in df.columns:
+            df[col] = 0.0
 
     df['total_active_minutes'] = (
         df['lightly_active_minutes'] +
@@ -62,5 +70,46 @@ def calculate_metabolic_metrics(df):
         lambda row: row['active_calories'] / row['total_active_minutes']
         if row['total_active_minutes'] > 0 else 0, axis=1
     )
+
+    return df
+
+
+def calculate_advanced_metrics(df):
+    """ Calculates Sleep Efficiency, Sleep Debt, Autonomic Balance, Activity/Sedentary Ratio, and Active TDEE Contribution. """
+
+    # 1. Sleep Efficiency
+    sleep_cols = ['sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake']
+    if all(c in df.columns for c in sleep_cols):
+        total_sleep = df['sleep_deep'] + df['sleep_light'] + df['sleep_rem']
+        total_bed = total_sleep + df['sleep_awake']
+        df['sleep_efficiency'] = (total_sleep / total_bed * 100).round(1)
+        df.loc[total_bed == 0, 'sleep_efficiency'] = None
+
+    # 2. Sleep Debt (Rolling 7 days)
+    if all(c in df.columns for c in sleep_cols[:3]):
+        total_sleep = df['sleep_deep'] + df['sleep_light'] + df['sleep_rem']
+        rolling_avg_sleep = total_sleep.rolling('7D', min_periods=1).mean()
+        df['sleep_debt'] = (total_sleep - rolling_avg_sleep).round(1)
+
+    # 3. Autonomic Balance (RMSSD / Resting BPM)
+    if 'rmssd' in df.columns and 'resting_bpm' in df.columns:
+        df['autonomic_balance'] = (df['rmssd'] / df['resting_bpm']).round(2)
+
+    # 4. Activity vs Sedentary Ratio
+    if 'total_active_minutes' in df.columns and 'sedentary_minutes' in df.columns:
+        # Ignore divide by zero warnings with pd.Series division
+        df['active_sedentary_ratio'] = np.where(
+            df['sedentary_minutes'] > 0,
+            (df['total_active_minutes'] / df['sedentary_minutes']).round(3),
+            0.0
+        )
+
+    # 5. Active TDEE Contribution
+    if 'active_calories' in df.columns and 'calories_total' in df.columns:
+        df['active_tdee_ratio'] = np.where(
+            df['calories_total'] > 0,
+            ((df['active_calories'] / df['calories_total']) * 100).round(1),
+            0.0
+        )
 
     return df

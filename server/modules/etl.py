@@ -4,6 +4,7 @@ import pandas as pd
 import config
 from modules import parsers
 
+
 def filter_by_date(df):
     """
     Filters the DataFrame based on the configured START_DATE and optional END_DATE.
@@ -16,24 +17,28 @@ def filter_by_date(df):
     Returns:
         pd.DataFrame: A new DataFrame containing only rows within the date range.
     """
-    if df is None or df.empty: return df
+    if df is None or df.empty:
+        return df
     if not isinstance(df.index, pd.DatetimeIndex):
-        try: df.index = pd.to_datetime(df.index)
-        except: return df
+        try:
+            df.index = pd.to_datetime(df.index)
+        except:
+            return df
 
     mask = None
     if config.START_DATE:
         mask = (df.index >= config.START_DATE)
-        
+
     if config.END_DATE:
         if mask is not None:
             mask = mask & (df.index <= config.END_DATE)
         else:
             mask = (df.index <= config.END_DATE)
-            
+
     if mask is not None:
         return df.loc[mask]
     return df
+
 
 def load_collection(folder_name, file_pattern, parser_func):
     """
@@ -53,7 +58,8 @@ def load_collection(folder_name, file_pattern, parser_func):
     """
     search_path = os.path.join(config.DATA_DIR, folder_name, file_pattern)
     files = glob.glob(search_path)
-    if not files: return pd.DataFrame()
+    if not files:
+        return pd.DataFrame()
 
     print(f"   Loading {len(files)} files for {file_pattern}...")
 
@@ -61,10 +67,13 @@ def load_collection(folder_name, file_pattern, parser_func):
     for f in files:
         try:
             chunk = parser_func(f)
-            if chunk is not None and not chunk.empty: frames.append(chunk)
-        except Exception as e: print(f"Error {f}: {e}")
+            if chunk is not None and not chunk.empty:
+                frames.append(chunk)
+        except Exception as e:
+            print(f"Error {f}: {e}")
 
-    if not frames: return pd.DataFrame()
+    if not frames:
+        return pd.DataFrame()
 
     full_df = pd.concat(frames)
 
@@ -79,25 +88,32 @@ def load_collection(folder_name, file_pattern, parser_func):
     full_df = full_df.sort_index()
     return full_df
 
+
 def get_data_date_range():
     """
     Scans the data directory to find the earliest and latest available dates.
     Uses 'calories-*.json' as the reliable anchor for date coverage.
     """
-    search_path = os.path.join(config.DATA_DIR, "Global Export Data", "calories-*.json")
+    search_path = os.path.join(
+        config.DATA_DIR, "Global Export Data", "calories-*.json")
     files = glob.glob(search_path)
-    if not files: return None, None
+    if not files:
+        return None, None
 
     dates = []
     for f in files:
         try:
             # Extract date from filename: calories-YYYY-MM-DD.json
-            date_part = os.path.basename(f).replace('calories-', '').replace('.json', '')
+            date_part = os.path.basename(f).replace(
+                'calories-', '').replace('.json', '')
             dates.append(pd.to_datetime(date_part))
-        except: continue
-    
-    if not dates: return None, None
+        except:
+            continue
+
+    if not dates:
+        return None, None
     return min(dates).strftime('%Y-%m-%d'), max(dates).strftime('%Y-%m-%d')
+
 
 def merge_all_data():
     """
@@ -124,18 +140,38 @@ def merge_all_data():
 
     # Define Loading Plan: (Folder, Pattern, Parser)
     load_plan = [
-        ("Global Export Data", "resting_heart_rate-*.json", parsers.parse_resting_heart_rate),
+        ("Global Export Data", "resting_heart_rate-*.json",
+         parsers.parse_resting_heart_rate),
+        ("Global Export Data", "heart_rate-*.json",
+         parsers.parse_heart_rate_intraday_summary),
         ("Global Export Data", "weight-*.json", parsers.parse_weight),
         ("Global Export Data", "calories-*.json", parsers.parse_calories_intraday),
         ("Sleep Score", "sleep_score.csv", parsers.parse_sleep_score_csv),
         ("Global Export Data", "sleep-*.json", parsers.parse_sleep_json_detailed),
         ("Oxygen Saturation (SpO2)", "Daily SpO2 - *.csv", parsers.parse_spo2_csv),
-        ("Heart Rate Variability", "Daily Heart Rate Variability Summary - *.csv", parsers.parse_hrv_csv),
+        ("Heart Rate Variability",
+         "Daily Heart Rate Variability Summary - *.csv", parsers.parse_hrv_csv),
         ("Stress Score", "Stress Score.csv", parsers.parse_stress_csv),
-        ("Global Export Data", "very_active_minutes-*.json", parsers.parse_simple_activity_json),
-        ("Global Export Data", "moderately_active_minutes-*.json", parsers.parse_simple_activity_json),
-        ("Global Export Data", "lightly_active_minutes-*.json", parsers.parse_simple_activity_json),
-        ("Global Export Data", "sedentary_minutes-*.json", parsers.parse_simple_activity_json),
+        ("Global Export Data", "very_active_minutes-*.json",
+         parsers.parse_simple_activity_json),
+        ("Global Export Data", "moderately_active_minutes-*.json",
+         parsers.parse_simple_activity_json),
+        ("Global Export Data", "lightly_active_minutes-*.json",
+         parsers.parse_simple_activity_json),
+        ("Global Export Data", "sedentary_minutes-*.json",
+         parsers.parse_simple_activity_json),
+        ("Physical Activity_GoogleData",
+         "cardio_acute_chronic_workload_ratio.csv", parsers.parse_acwr_csv),
+        ("Physical Activity_GoogleData",
+         "demographic_vo2max.csv", parsers.parse_vo2max_csv),
+        ("Physical Activity_GoogleData",
+         "daily_readiness.csv", parsers.parse_readiness_csv),
+        ("Physical Activity_GoogleData", "daily_respiratory_rate.csv",
+         parsers.parse_respiratory_rate_csv),
+        ("Physical Activity_GoogleData", "daily_sleep_temperature_derivations.csv",
+         parsers.parse_skin_temperature_csv),
+        ("Physical Activity_GoogleData", "time_in_heart_rate_zone_*.csv",
+         parsers.parse_active_zones_csv),
     ]
 
     datasets = []
@@ -144,7 +180,8 @@ def merge_all_data():
 
     # Filter empty datasets
     datasets = [d for d in datasets if not d.empty]
-    if not datasets: return None
+    if not datasets:
+        return None
 
     # Merge Strategy: Outer Join starting from the first non-empty dataset
     master_df = datasets[0]
@@ -160,10 +197,12 @@ def merge_all_data():
     # Fill NaNs for activity and sleep metrics (logical 0)
     cols_zero = [
         'very_active_minutes', 'moderately_active_minutes', 'lightly_active_minutes', 'sedentary_minutes',
-        'calories_total', 'sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake'
+        'calories_total', 'sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake',
+        'zone_out_of_range', 'zone_fat_burn', 'zone_cardio', 'zone_peak', 'zone_light'
     ]
     for c in cols_zero:
-        if c in master_df.columns: master_df[c] = master_df[c].fillna(0)
+        if c in master_df.columns:
+            master_df[c] = master_df[c].fillna(0)
 
     # Final Cleanup: Remove rows where no calories were burned (implies no data recorded)
     if 'calories_total' in master_df.columns:
@@ -173,6 +212,7 @@ def merge_all_data():
             print(f"   -> Cleaned {initial - len(master_df)} empty rows.")
 
     return master_df
+
 
 def export_to_json(df):
     """

@@ -43,7 +43,7 @@ jobs:
       - name: Setup Python (PyInstaller Backend)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Setup Rust (Tauri Core)
         uses: dtolnay/rust-toolchain@stable
