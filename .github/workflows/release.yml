@@ -18,6 +18,9 @@ jobs:
             target: x86_64-unknown-linux-gnu
             bin_name: fitstats-engine
           - os: macos-latest
+            target: aarch64-apple-darwin
+            bin_name: fitstats-engine
+          - os: macos-13
             target: x86_64-apple-darwin
             bin_name: fitstats-engine
           - os: windows-latest
@@ -67,7 +70,15 @@ jobs:
         run: |
           mkdir -p client/src-tauri/bin
           # Moves the native Python executable renaming it with the exact Target Triple Tauri expects
-          cp server/dist/${{ matrix.bin_name }} client/src-tauri/bin/fitstats-engine-${{ matrix.target }}
+          # Special handling for Windows extension (.exe)
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp server/dist/${{ matrix.bin_name }} client/src-tauri/bin/fitstats-engine-${{ matrix.target }}.exe
+          else
+            cp server/dist/${{ matrix.bin_name }} client/src-tauri/bin/fitstats-engine-${{ matrix.target }}
+          fi
+          
+          # Verify local copy
+          ls -R client/src-tauri/bin/
 
       - name: Install React dependencies
         working-directory: ./client
