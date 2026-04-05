@@ -17,6 +17,15 @@ A comprehensive, **cross-platform Desktop Application** designed to locally anal
 - **Readiness Score (Z-Score):** Custom algorithm combining Sleep Quality and Resting Heart Rate deviation.
 - **Metabolic Analysis:** **BMR** (Mifflin-St Jeor) vs **Active Calories** breakdown.
 - **Physiology & Sleep:** Tracking of **HRV**, **Stress Score**, and deep breakdown of Sleep architecture.
+- **Advanced Training Load:** **TRIMP** (Training Impulse), **Training Monotony**, and **Strain** derived from detailed Heart Rate Zones and workout parsing (Steps/Distance/Exercises).
+- **Illness Predictor:** Dual-flag early warning system tracking abnormal short-term (Daily) and long-term (Trend) deviations in Nightly Skin Temperature and Respiratory Rate.
+- **HRV Coefficient of Variation (CV):** Dynamic tracking of autonomous nervous system adaptability and recovery capacity.
+
+### ⚡ Server Architecture
+
+The internal backend leverages an Event-Driven, highly asynchronous design:
+- Heavy Data Merging (ETL) is spawned seamlessly into **BackgroundTasks**, eliminating HTTP route blocking.
+- A persistent, full-duplex **WebSocket (`/ws/status`)** continuously streams real-time status updates directly to the Frontend (React hooks / Angular observables). This eliminates polling and provides robust scalability even for datasets spanning multiple years.
 
 ---
 

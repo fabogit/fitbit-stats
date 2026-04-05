@@ -44,9 +44,58 @@ async def check_path(path: str):
     return {"valid": True, "path": target_path}
 
 
+from fastapi import WebSocket, WebSocketDisconnect
+import asyncio
+from typing import List
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+manager = ConnectionManager()
+
+
+async def run_etl_subprocess(cmd):
+    """Esegue l'ETL in background senza bloccare il server e notifica via WebSocket."""
+    await manager.broadcast({"event": "etl_started", "status": "running"})
+    try:
+        # Run subprocess asynchronously
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            await manager.broadcast({"event": "etl_finished", "status": "success", "message": "ETL completed successfully"})
+        else:
+            err_msg = stderr.decode() if stderr else "Unknown error"
+            print(f"ETL Error: {err_msg}")
+            await manager.broadcast({"event": "etl_finished", "status": "error", "message": err_msg})
+            
+    except Exception as e:
+        await manager.broadcast({"event": "etl_finished", "status": "error", "message": str(e)})
+
+
 @app.post("/api/start")
-async def start_etl(payload: ConfigPayload):
-    """Saves biometric configurations and initiates the main ETL pipeline synchronously."""
+async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
+    """Saves biometric configurations and initiates the main ETL pipeline asynchronously via BackgroundTasks."""
     # Save to session_config.json to persist across runs and for watcher
     session_config = {
         "dob": payload.dob,
@@ -69,16 +118,20 @@ async def start_etl(payload: ConfigPayload):
         "--data-dir", payload.data_path
     ]
 
+    background_tasks.add_task(run_etl_subprocess, cmd)
+    return {"status": "accepted", "message": "ETL process started in background"}
+
+
+@app.websocket("/ws/status")
+async def websocket_status(websocket: WebSocket):
+    """Canale persistente per notificare il Client dello stato dell'ETL."""
+    await manager.connect(websocket)
     try:
-        # Run ETL and wait for it to complete so the client can fetch the result immediately
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, check=True)
-        return {"status": "success", "message": "ETL process completed successfully"}
-    except subprocess.CalledProcessError as e:
-        print(f"ETL Error: {e.stderr}")
-        raise HTTPException(status_code=500, detail=f"ETL failed: {e.stderr}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        while True:
+            # Attendiamo passivamente (keep-alive)
+            data = await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 
 @app.get("/api/config")
