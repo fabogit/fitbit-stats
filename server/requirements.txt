@@ -4,3 +4,4 @@ seaborn
 watchdog
 fastapi
 uvicorn
+websockets
