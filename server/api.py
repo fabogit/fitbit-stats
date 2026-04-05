@@ -142,6 +142,29 @@ async def get_config():
             return json.load(f)
     return {}
 
+@app.delete("/api/clear")
+async def clear_data():
+    """Erases session config and computed dashboard data to simulate a factory reset."""
+    files_to_remove = ["session_config.json"]
+    
+    # Try to remove dashboard_data.json from CLIENT_PUBLIC_DIR if available
+    client_dir = os.environ.get("CLIENT_PUBLIC_DIR")
+    if client_dir:
+        files_to_remove.append(os.path.join(client_dir, "dashboard_data.json"))
+    else:
+        files_to_remove.append("dashboard_data.json")
+
+    cleared = []
+    for filepath in files_to_remove:
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                cleared.append(filepath)
+        except Exception as e:
+            print(f"Error removing {filepath}: {e}")
+            
+    return {"status": "ok", "cleared": cleared}
+
 
 @app.post("/api/brief")
 async def run_brief(payload: dict = None):

@@ -3,7 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Command } from "@tauri-apps/plugin-shell";
 import { appDataDir } from "@tauri-apps/api/path";
-import { exists, readTextFile, writeTextFile, BaseDirectory, mkdir } from "@tauri-apps/plugin-fs";
+import { exists, readTextFile, writeTextFile, BaseDirectory, mkdir, remove } from "@tauri-apps/plugin-fs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle2, AlertCircle, Search, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertCircle, Search, Loader2, Trash2 } from "lucide-react";
 import { useAppDispatch } from "../../store/store";
 import { fetchHealthData, setIsProcessing } from "../../features/dashboard/dashboardSlice";
 
@@ -174,6 +174,39 @@ export function ConfigForm({
   }, [formData.data_path, checkPath]);
 
   const dispatch = useAppDispatch();
+
+  const handleClearData = async () => {
+    let isConfirmed = false;
+    if (isTauri()) {
+        const { confirm } = await import("@tauri-apps/plugin-dialog");
+        isConfirmed = await confirm("Are you sure you want to delete all configuration and health data? This cannot be undone.", { title: 'FitStats - Factory Reset', kind: 'warning' });
+    } else {
+        isConfirmed = window.confirm("Are you sure you want to delete all configuration and health data? This cannot be undone.");
+    }
+    
+    if (!isConfirmed) return;
+    
+    setLoading(true);
+    try {
+      if (isTauri()) {
+        try { await remove("session_config.json", { baseDir: BaseDirectory.AppData }); } catch (e) {}
+        try { await remove("dashboard_data.json", { baseDir: BaseDirectory.AppData }); } catch (e) {}
+      } else {
+        await fetch("http://localhost:8000/api/clear", { method: "DELETE" });
+      }
+      
+      setFormData({ dob: "", gender: "", height: "", weight: "", data_path: "./data" });
+      setPathStatus("idle");
+      // Calling fetchHealthData will reload empty state causing NoDataState to re-render in Dashboard
+      dispatch(fetchHealthData());
+      alert("All application data has been successfully deleted.");
+    } catch (e) {
+      console.error("Error clearing data:", e);
+      alert("Failed to clear data.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -448,6 +481,16 @@ export function ConfigForm({
       </div>
 
       <div className="pt-6 flex gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-12 w-12 p-0 flex-shrink-0 text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/20"
+          onClick={handleClearData}
+          disabled={loading}
+          title="Factory Reset: Clear all data"
+        >
+          <Trash2 className="w-5 h-5" />
+        </Button>
         <Button
           type="button"
           variant="outline"
