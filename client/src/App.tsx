@@ -62,7 +62,7 @@ function App() {
 
   const handleInitialConfigSuccess = () => {
     setIsFirstRun(false);
-    dispatch(fetchHealthData());
+    // fetchHealthData is now automatically dispatched via WebSocket closure inside ConfigForm
   };
 
   const handleTabChange = (tab: string) => {

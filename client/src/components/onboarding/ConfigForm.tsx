@@ -15,6 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CheckCircle2, AlertCircle, Search, Loader2 } from "lucide-react";
+import { useAppDispatch } from "../../store/store";
+import { fetchHealthData, setIsProcessing } from "../../features/dashboard/dashboardSlice";
 
 interface ConfigFormProps {
   onSuccess: () => void;
@@ -171,6 +173,8 @@ export function ConfigForm({
     return () => clearTimeout(timer);
   }, [formData.data_path, checkPath]);
 
+  const dispatch = useAppDispatch();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -197,6 +201,7 @@ export function ConfigForm({
     }
 
     setLoading(true);
+    dispatch(setIsProcessing(true));
 
     if (isTauri()) {
       try {
@@ -218,17 +223,28 @@ export function ConfigForm({
           "--data-dir", pathVal,
           "--out-dir", outDir
         ]);
-        const output = await cmd.execute();
-        if (output.code === 0) {
-          onSuccess();
-        } else {
-          console.error("Sidecar execution failed:", output.stderr);
-          alert("Error executing ETL: " + output.stderr);
-        }
+        
+        // Close form instantly and let it run in background closure
+        onSuccess();
+        
+        cmd.execute().then(output => {
+           dispatch(setIsProcessing(false));
+           if (output.code === 0) {
+             dispatch(fetchHealthData());
+           } else {
+             console.error("Sidecar execution failed:", output.stderr);
+             alert("Error executing ETL: " + output.stderr);
+           }
+        }).catch(err => {
+           dispatch(setIsProcessing(false));
+           console.error("Tauri sidecar invocation exception:", err);
+           alert("Failed to spawn background engine.");
+        });
+
       } catch (err) {
-        console.error("Tauri sidecar invocation exception:", err);
-      } finally {
+        dispatch(setIsProcessing(false));
         setLoading(false);
+        console.error("Tauri sidecar invocation exception:", err);
       }
     } else {
       try {
@@ -246,13 +262,44 @@ export function ConfigForm({
 
         if (!resp.ok) {
           console.error("Failed to start processing");
+          dispatch(setIsProcessing(false));
+          setLoading(false);
+          alert("Error starting calculation on the server.");
         } else {
+          // Close form instantly and listen in background
           onSuccess();
+          
+          const ws = new WebSocket("ws://localhost:8000/ws/status");
+          
+          ws.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              if (data.event === "etl_finished") {
+                dispatch(setIsProcessing(false));
+                ws.close();
+                if (data.status === "success") {
+                  dispatch(fetchHealthData());
+                } else {
+                  alert("Error during ETL: " + data.message);
+                }
+              }
+            } catch (e) {
+              console.error("Error parsing WS message:", e);
+            }
+          };
+          
+          ws.onerror = (error) => {
+             console.error("WebSocket error:", error);
+             dispatch(setIsProcessing(false));
+             ws.close();
+             alert("WebSocket disconnected unexpectedly.");
+          };
         }
       } catch (err) {
         console.error(err);
-      } finally {
+        dispatch(setIsProcessing(false));
         setLoading(false);
+        alert("Failed to connect to the local server.");
       }
     }
   };
