@@ -144,6 +144,9 @@ def merge_all_data():
          parsers.parse_resting_heart_rate),
         ("Global Export Data", "heart_rate-*.json",
          parsers.parse_heart_rate_intraday_summary),
+        ("Global Export Data", "steps-*.json", parsers.parse_steps_json),
+        ("Global Export Data", "distance-*.json", parsers.parse_distance_json),
+        ("Global Export Data", "exercise-*.json", parsers.parse_exercise_json),
         ("Global Export Data", "weight-*.json", parsers.parse_weight),
         ("Global Export Data", "calories-*.json", parsers.parse_calories_intraday),
         ("Sleep Score", "sleep_score.csv", parsers.parse_sleep_score_csv),
@@ -198,7 +201,8 @@ def merge_all_data():
     cols_zero = [
         'very_active_minutes', 'moderately_active_minutes', 'lightly_active_minutes', 'sedentary_minutes',
         'calories_total', 'sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake',
-        'zone_out_of_range', 'zone_fat_burn', 'zone_cardio', 'zone_peak', 'zone_light'
+        'zone_out_of_range', 'zone_fat_burn', 'zone_cardio', 'zone_peak', 'zone_light',
+        'steps', 'distance', 'exercise_duration', 'exercise_calories', 'exercise_count'
     ]
     for c in cols_zero:
         if c in master_df.columns:
