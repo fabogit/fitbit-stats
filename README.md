@@ -44,8 +44,8 @@ If you wish to modify the code, you will need to run the hybrid stack locally.
 
 ### Prerequisites
 
-1. **Python 3.13+**
-2. **Node.js 24+** & **pnpm 10+**
+1. **Python 3.14+**
+2. **Node.js 24.12+** & **pnpm 10+**
 3. **Rust Toolchain** (cargo) & Tauri dependencies
 
 ### 1. Compile the Python Sidecar
