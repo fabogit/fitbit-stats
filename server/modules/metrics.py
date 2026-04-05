@@ -112,4 +112,51 @@ def calculate_advanced_metrics(df):
             0.0
         )
 
+    # 6. TRIMP (Training Impulse)
+    if all(c in df.columns for c in ['zone_fat_burn', 'zone_cardio', 'zone_peak']):
+        df['trimp'] = (df['zone_fat_burn'] * 1 + df['zone_cardio'] * 2.5 + df['zone_peak'] * 4).round(1)
+    else:
+        df['trimp'] = 0.0
+
+    # 7. Training Monotony & Strain
+    if 'trimp' in df.columns:
+        trimp_mean = df['trimp'].rolling('7D', min_periods=3).mean()
+        trimp_std = df['trimp'].rolling('7D', min_periods=3).std()
+        df['training_monotony'] = np.where((trimp_std > 0) & (pd.notna(trimp_std)), (trimp_mean / trimp_std).round(2), 0)
+        trimp_sum = df['trimp'].rolling('7D', min_periods=1).sum()
+        df['training_strain'] = (trimp_sum * df['training_monotony']).round(1)
+
+    # 8. Illness Predictor (Daily & Trend)
+    if 'temperature_variation' in df.columns and 'respiratory_rate' in df.columns:
+        # sick_flag_daily
+        df['sick_flag_daily'] = np.where(
+            (df['temperature_variation'] > 0.7) & 
+            (df['respiratory_rate'] > df['respiratory_rate'].shift(1) + 1),
+            True, False
+        )
+        
+        # sick_flag_trend
+        temp_baseline = df['temperature_variation'].rolling('7D', min_periods=3).mean()
+        resp_baseline = df['respiratory_rate'].rolling('7D', min_periods=3).mean()
+        df['sick_flag_trend'] = np.where(
+            (df['temperature_variation'] > temp_baseline + 0.5) & 
+            (df['respiratory_rate'] > resp_baseline + 1),
+            True, False
+        )
+
+    # 9. HRV Coefficient of Variation (CV)
+    if 'rmssd' in df.columns:
+        rmssd_mean = df['rmssd'].rolling('7D', min_periods=3).mean()
+        rmssd_std = df['rmssd'].rolling('7D', min_periods=3).std()
+        df['hrv_cv'] = np.where((rmssd_mean > 0) & (pd.notna(rmssd_std)), (rmssd_std / rmssd_mean).round(3), None)
+
+    # 10. ACWR Supercompensation & Injury Risk
+    if 'acwr_ratio' in df.columns:
+        df['supercompensation_flag'] = np.where((df['acwr_ratio'] >= 1.0) & (df['acwr_ratio'] <= 1.3), True, False)
+        df['injury_risk_flag'] = np.where(df['acwr_ratio'] > 1.3, True, False)
+
+    # 11. Aerobic Efficiency Factor (AEF) cleanup
+    if 'exercise_aef' in df.columns:
+        df['exercise_aef'] = df['exercise_aef'].fillna(0.0).round(2)
+
     return df

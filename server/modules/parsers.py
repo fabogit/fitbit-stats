@@ -387,3 +387,75 @@ def parse_skin_temperature_csv(file_path):
         df['baseline temperature celsius']
     df.set_index('date', inplace=True)
     return df[['temperature_variation']]
+
+
+def parse_steps_json(file_path):
+    """Parses 'steps-YYYY-MM-DD.json'."""
+    with open(file_path, 'r') as f:
+        data = json.load(f)
+    df = pd.DataFrame(data)
+    if df.empty:
+        return None
+    df['value'] = pd.to_numeric(df['value'], errors='coerce')
+    df['date'] = pd.to_datetime(df['dateTime'], format='%m/%d/%y %H:%M:%S').dt.normalize()
+    return df.groupby('date')['value'].sum().reset_index().rename(columns={'value': 'steps'}).set_index('date')
+
+
+def parse_distance_json(file_path):
+    """Parses 'distance-YYYY-MM-DD.json'."""
+    with open(file_path, 'r') as f:
+        data = json.load(f)
+    df = pd.DataFrame(data)
+    if df.empty:
+        return None
+    df['value'] = pd.to_numeric(df['value'], errors='coerce')
+    df['date'] = pd.to_datetime(df['dateTime'], format='%m/%d/%y %H:%M:%S').dt.normalize()
+    return df.groupby('date')['value'].sum().reset_index().rename(columns={'value': 'distance'}).set_index('date')
+
+
+def parse_exercise_json(file_path):
+    """Parses 'exercise-*.json'."""
+    with open(file_path, 'r') as f:
+        data = json.load(f)
+    if not data:
+        return None
+    records = []
+    for entry in data:
+        dt = entry.get('startTime')
+        if not dt:
+            continue
+        dur_ms = entry.get('duration', 0)
+        dur_min = dur_ms / 60000.0
+        cals = entry.get('calories', 0)
+        
+        recs = {
+            'date': dt,
+            'exercise_duration': dur_min,
+            'exercise_calories': cals,
+            'exercise_count': 1
+        }
+        avg_hr = entry.get('averageHeartRate')
+        if avg_hr and avg_hr > 0:
+            recs['exercise_aef'] = cals / avg_hr
+            
+        records.append(recs)
+        
+    if not records:
+        return None
+        
+    df = pd.DataFrame(records)
+    df['date'] = pd.to_datetime(df['date'], format='%m/%d/%y %H:%M:%S').dt.normalize()
+    
+    aggs = {
+        'exercise_duration': 'sum',
+        'exercise_calories': 'sum',
+        'exercise_count': 'sum'
+    }
+    if 'exercise_aef' in df.columns:
+        aggs['exercise_aef'] = 'mean'
+    else:
+        df['exercise_aef'] = 0.0
+        aggs['exercise_aef'] = 'mean'
+        
+    stats = df.groupby('date').agg(aggs)
+    return stats
