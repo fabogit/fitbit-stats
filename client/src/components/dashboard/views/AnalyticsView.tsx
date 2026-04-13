@@ -30,18 +30,18 @@ export function AnalyticsView({ onAction }: { onAction?: () => void }) {
           <ZonesChart />
         </div>
         <div className={cn("lg:col-span-1", chartHeight)}>
-          <ScatterChart />
-        </div>
-
-        <div className={cn("lg:col-span-1", chartHeight)}>
-          <RHRCorrelationChart />
-        </div>
-        <div className={cn("lg:col-span-1", chartHeight)}>
-          <SedentaryTrendChart />
+          <WeeklyChart />
         </div>
 
         <div className="lg:col-span-2 h-[350px] md:h-[400px]">
-          <WeeklyChart />
+          <ScatterChart />
+        </div>
+        <div className="lg:col-span-2 h-[350px] md:h-[400px]">
+          <RHRCorrelationChart />
+        </div>
+
+        <div className="lg:col-span-2 h-[350px] md:h-[400px]">
+          <SedentaryTrendChart />
         </div>
 
       </div>
