@@ -41,8 +41,6 @@ build/
 
 package-lock.json
 yarn.lock
-pnpm-lock.yaml
-pnpm-workspace.yaml
 
 npm-debug.log*
 yarn-debug.log*
@@ -55,9 +53,18 @@ yarn-error.log*
 # PROJECT SPECIFIC (Privacy)
 # ==========================
 
-server/data/
+data
+server/data
 
 *.csv
 dashboard_data.json
 
-# backend/plots/
+# ==========================
+# TAURI & RUST (Client Sidecar)
+# ==========================
+client/src-tauri/bin/
+
+# Ai agents
+.agent*
+.claude*
+.Jules

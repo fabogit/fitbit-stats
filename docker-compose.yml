@@ -1,0 +1,53 @@
+services:
+  engine-watcher:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    volumes:
+      - ./server:/app
+      - ./data:/app/data
+      - shared_data:/app/shared
+    environment:
+      - DATA_DIR=/app/data
+      - CLIENT_PUBLIC_DIR=/app/shared
+    # Auto-synchronize data on changes
+    restart: unless-stopped
+
+  api-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./server:/app
+      - ./data:/app/data
+      - shared_data:/app/shared
+    environment:
+      - DATA_DIR=/app/data
+      - CLIENT_PUBLIC_DIR=/app/shared
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    volumes:
+      - shared_data:/app/shared
+    depends_on:
+      api-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  shared_data:

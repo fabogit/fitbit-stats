@@ -2,30 +2,28 @@ import {
   LayoutDashboard,
   Activity,
   PieChart,
-  PanelLeftClose,
   Table,
 } from "lucide-react";
 import { DateFilter } from "./DateFilter";
-import { ModeToggle } from "@/components/mode-toggle";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
   currentTab: string;
   onTabChange: (tab: string) => void;
-  onClose: () => void;
 }
 
-export function Sidebar({ currentTab, onTabChange, onClose }: SidebarProps) {
+export function Sidebar({ currentTab, onTabChange }: SidebarProps) {
   const navItems = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "timeline", label: "Timeline", icon: Activity },
     { id: "analytics", label: "Analytics", icon: PieChart },
+    { id: "brief", label: "Daily Brief", icon: Activity },
     { id: "datagrid", label: "Data Grid", icon: Table },
   ];
 
   return (
     <aside className="flex flex-col h-full overflow-y-auto bg-card border-r border-border">
-      {/* Logo Area & Close Button */}
+      {/* Logo Area */}
       <div className="p-6 border-b border-border flex items-center justify-between">
         <h1 className="text-xl font-bold text-foreground tracking-tight flex items-center gap-2">
           🏃‍♂️{" "}
@@ -33,14 +31,6 @@ export function Sidebar({ currentTab, onTabChange, onClose }: SidebarProps) {
             FitStats
           </span>
         </h1>
-
-        <button
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted"
-          title="Close Sidebar"
-        >
-          <PanelLeftClose className="w-5 h-5" />
-        </button>
       </div>
 
       {/* Navigation */}
@@ -65,16 +55,8 @@ export function Sidebar({ currentTab, onTabChange, onClose }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Footer Section: Filters + Theme Toggle */}
+      {/* Footer Section: Filters */}
       <div className="p-4 border-t border-border bg-muted/20 space-y-4">
-        {/* Theme Toggle Row */}
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-medium text-muted-foreground">
-            Theme
-          </span>
-          <ModeToggle />
-        </div>
-
         {/* Date Filter Component */}
         <DateFilter />
       </div>
