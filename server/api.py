@@ -1,10 +1,13 @@
-import subprocess
 import os
 import sys
 import json
+import asyncio
+from typing import List
+
 from pydantic import BaseModel, Field, validator
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+
 from modules.briefing import get_daily_brief
 
 # Change working directory so relative paths in config.py work correctly
@@ -44,11 +47,6 @@ async def check_path(path: str):
 
     return {"valid": True, "path": target_path}
 
-
-from fastapi import WebSocket, WebSocketDisconnect
-import asyncio
-from typing import List
-
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -72,8 +70,8 @@ manager = ConnectionManager()
 
 
 async def run_etl_subprocess(cmd):
-    """Esegue l'ETL in background senza bloccare il server e notifica via WebSocket."""
-    await manager.broadcast({"event": "etl_started", "status": "running"})
+    """Esegue l'ETL in background, parsa linee PROGRESS da stdout e notifica via WebSocket."""
+    await manager.broadcast({"event": "etl_progress", "step": "Starting ETL engine...", "progress": 0})
     try:
         # Run subprocess asynchronously
         process = await asyncio.create_subprocess_exec(
@@ -81,15 +79,31 @@ async def run_etl_subprocess(cmd):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await process.communicate()
-        
+
+        # Read stdout line-by-line for real-time progress
+        stderr_chunks = []
+        async for line in process.stdout:
+            text = line.decode().strip()
+            if text.startswith("PROGRESS:"):
+                parts = text.split(":", 2)
+                try:
+                    pct = int(parts[1])
+                    step = parts[2] if len(parts) > 2 else ""
+                    await manager.broadcast({"event": "etl_progress", "step": step, "progress": pct})
+                except (ValueError, IndexError):
+                    pass
+
+        # Collect stderr after stdout is done
+        stderr_data = await process.stderr.read()
+        await process.wait()
+
         if process.returncode == 0:
             await manager.broadcast({"event": "etl_finished", "status": "success", "message": "ETL completed successfully"})
         else:
-            err_msg = stderr.decode() if stderr else "Unknown error"
+            err_msg = stderr_data.decode() if stderr_data else "Unknown error"
             print(f"ETL Error: {err_msg}")
             await manager.broadcast({"event": "etl_finished", "status": "error", "message": err_msg})
-            
+
     except Exception as e:
         await manager.broadcast({"event": "etl_finished", "status": "error", "message": str(e)})
 
