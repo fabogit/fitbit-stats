@@ -12,6 +12,8 @@ interface DashboardState {
   data: HealthRecord[];
   filteredData: HealthRecord[];
   dateRange: DateRange | null;
+  minDataDate: string;
+  maxDataDate: string;
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
   isProcessing: boolean;
@@ -23,6 +25,8 @@ const initialState: DashboardState = {
   data: [],
   filteredData: [],
   dateRange: null,
+  minDataDate: "",
+  maxDataDate: "",
   status: "idle",
   error: null,
   isProcessing: false,
@@ -109,8 +113,11 @@ const dashboardSlice = createSlice({
         state.data = action.payload;
 
         if (action.payload.length > 0) {
-          const lastRecord = action.payload[action.payload.length - 1];
           const firstRecord = action.payload[0];
+          const lastRecord = action.payload[action.payload.length - 1];
+
+          state.minDataDate = firstRecord.date;
+          state.maxDataDate = lastRecord.date;
 
           const endDate = lastRecord.date;
 

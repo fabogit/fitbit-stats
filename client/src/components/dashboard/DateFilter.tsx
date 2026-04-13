@@ -13,13 +13,11 @@ import { cn } from "@/lib/utils";
 
 export function DateFilter() {
   const dispatch = useAppDispatch();
-  const { dateRange, data } = useAppSelector((state) => state.dashboard);
+  const { dateRange, data, minDataDate, maxDataDate } = useAppSelector((state) => state.dashboard);
   const [activePreset, setActivePreset] = useState<string>("3M");
 
-  const minDate = data.length > 0 ? data[0].date : "";
-  const lastDataDate = data.length > 0 ? data[data.length - 1].date : "";
-  const today = format(new Date(), "yyyy-MM-dd");
-  const maxDate = lastDataDate > today ? today : lastDataDate;
+  const minDate = minDataDate;
+  const maxDate = maxDataDate;
 
   const presets = [
     { label: "1M", months: 1 },

@@ -4,7 +4,6 @@ import asyncio
 from typing import List
 
 import uvicorn
-import websockets
 from pydantic import BaseModel, Field, validator
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
