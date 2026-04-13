@@ -104,6 +104,14 @@ jobs:
         working-directory: ./client
         run: pnpm run lint
 
+      - name: Sync version from package.json to tauri.conf.json
+        shell: bash
+        run: |
+          # Source of Truth: Version is automatically read from client/package.json.
+          VERSION=$(jq -r .version client/package.json)
+          echo "Setting version to $VERSION (from package.json)"
+          jq ".version = \"$VERSION\"" client/src-tauri/tauri.conf.json > tauri.conf.json.tmp && mv tauri.conf.json.tmp client/src-tauri/tauri.conf.json
+
       - name: Build and Publish with Tauri (Automatic Release)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -113,13 +121,13 @@ jobs:
           tagName: ${{ github.ref_name }} # Use the same name as the Tag (e.g. v1.0.0)
           releaseName: "FitStats ${{ github.ref_name }}"
           releaseBody: |
-            New auto-compiled native multi-platform release for Mac, Windows, and Linux.
+            New auto-compiled native multi-platform release for Mac 🍎, Windows 🖥️, and Linux 🐧.
 
-            ### 🍎 Note per utenti macOS (Apple Silicon M-series)
-            Se visualizzi l'errore "L'app è danneggiata" o "Sviluppatore non identificato", apri il Terminale e digita:
+            ### 🍎 Note for macOS users (Apple Silicon M-series)
+            If you see the "App is damaged" or "Unidentified Developer" error, open a Terminal and type:
             ```bash
             xattr -cr /Applications/FitStats.app
             ```
-            *(Oppure trascina l'app nel terminale dopo `xattr -cr `)*
+            *(Or drag the app into the terminal after typing `xattr -cr `)*
           releaseDraft: false
           prerelease: false
