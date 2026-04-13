@@ -15,6 +15,8 @@ interface DashboardState {
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
   isProcessing: boolean;
+  etlProgress: number;
+  etlStep: string;
 }
 
 const initialState: DashboardState = {
@@ -24,6 +26,8 @@ const initialState: DashboardState = {
   status: "idle",
   error: null,
   isProcessing: false,
+  etlProgress: 0,
+  etlStep: "",
 };
 
 export const fetchHealthData = createAsyncThunk(
@@ -85,6 +89,14 @@ const dashboardSlice = createSlice({
     },
     setIsProcessing(state, action: PayloadAction<boolean>) {
       state.isProcessing = action.payload;
+      if (!action.payload) {
+        state.etlProgress = 0;
+        state.etlStep = "";
+      }
+    },
+    setEtlProgress(state, action: PayloadAction<{ progress: number; step: string }>) {
+      state.etlProgress = action.payload.progress;
+      state.etlStep = action.payload.step;
     },
   },
   extraReducers: (builder) => {
@@ -123,7 +135,7 @@ const dashboardSlice = createSlice({
   },
 });
 
-export const { setDateRange, resetFilter, setIsProcessing } = dashboardSlice.actions;
+export const { setDateRange, resetFilter, setIsProcessing, setEtlProgress } = dashboardSlice.actions;
 
 export const selectFilteredData = (state: { dashboard: DashboardState }) => state.dashboard.filteredData;
 export const selectDashboardStatus = (state: { dashboard: DashboardState }) => state.dashboard.status;
