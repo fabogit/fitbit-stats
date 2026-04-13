@@ -46,13 +46,16 @@ You do **not** need to touch any code or terminal to use this application!
 6. Click **Calculate**. The app will do the heavy lifting in the background and load your interactive dashboard.
 
 #### 🍎 Special Note for macOS Users (M1/M2/M3/M4)
-As the application is currently distributed without a paid Apple Developer certificate, macOS Gatekeeper may flag it as "damaged" or from an "unidentified developer." 
+
+As the application is currently distributed without a paid Apple Developer certificate, macOS Gatekeeper may flag it as "damaged" or from an "unidentified developer."
 
 To fix this, open your **Terminal** and run:
+
 ```bash
 xattr -cr /Applications/FitStats.app
 ```
-*(Or drag the app icon into the terminal after typing `xattr -cr `).* This removes the quarantine flag and allows the app to start normally.
+
+_(Or drag the app icon into the terminal after typing `xattr -cr `)._ This removes the quarantine flag and allows the app to start normally.
 
 _(Note: The app remembers your biometrics and folder path securely inside your OS's AppData for subsequent launches!)_
 
@@ -74,6 +77,7 @@ For users who prefer a web-based interface or home lab deployment, a full Docker
 5. Open your browser to [**http://localhost:8080**](http://localhost:8080).
 
 ### Services
+
 - **Frontend (port 8080):** The web dashboard served by Nginx.
 - **API Server (port 8000):** The Python/FastAPI engine handling calculations.
 - **Engine Watcher:** An optional background service that automatically triggers a re-calculate when files in the `data/` directory are modified.
@@ -108,14 +112,18 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install pyinstaller
+```
 
 # Compile standalone executable
-pyinstaller --clean fitstats-engine.spec
+
+`pyinstaller --clean fitstats-engine.spec`
 
 #### Sidecar Naming Convention
+
 Tauri requires sidecars to have a specific suffix based on the **target triple**. You can find your triple by running `rustc -Vv | grep host`.
 
 Common names:
+
 - **Mac (Silicon):** `fitstats-engine-aarch64-apple-darwin`
 - **Mac (Intel):** `fitstats-engine-x86_64-apple-darwin`
 - **Linux:** `fitstats-engine-x86_64-unknown-linux-gnu`
@@ -156,6 +164,7 @@ This repository is equipped with a fully automated Release Pipeline designed to 
 ## 🏛 Legacy Versions
 
 If you are looking for older versions of the project:
+
 - **[v1 (Legacy)](../../tree/v1):** The original Python scripts and basic data parsing.
 - **[v2 (Legacy)](../../tree/v2):** The first React web interface with Docker support.
 - **[Standalone](../../tree/main):** The current active development branch (v3.x).
