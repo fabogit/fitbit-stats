@@ -36,6 +36,16 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 10
+          cache: true
+          cache_dependency_path: client/pnpm-lock.yaml
+
+      - name: Install React dependencies
+        working-directory: ./client
+        run: pnpm install
+
+      - name: Run Linter (Guard)
+        working-directory: ./client
+        run: pnpm run lint
 
       - name: Setup Python (PyInstaller Backend)
         uses: actions/setup-python@v6
@@ -67,21 +77,13 @@ jobs:
           # Determine file extension
           EXT=""
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then EXT=".exe"; fi
-          
+
           # Move both sidecars with the target triple Tauri expects
           cp server/dist/fitstats-engine$EXT client/src-tauri/bin/fitstats-engine-${{ matrix.target }}$EXT
           cp server/dist/fitstats-server$EXT client/src-tauri/bin/fitstats-server-${{ matrix.target }}$EXT
-          
+
           # Verify local copy
           ls -R client/src-tauri/bin/
-
-      - name: Install React dependencies
-        working-directory: ./client
-        run: pnpm install
-
-      - name: Run Linter (Guard)
-        working-directory: ./client
-        run: pnpm run lint
 
       - name: Build and Publish with Tauri (Automatic Release)
         uses: tauri-apps/tauri-action@v0
