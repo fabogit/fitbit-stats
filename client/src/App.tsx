@@ -134,7 +134,7 @@ function App() {
               {activeTab === "overview" && <OverviewView onAction={() => setIsSettingsOpen(true)} />}
               {activeTab === "timeline" && <TimelineView onAction={() => setIsSettingsOpen(true)} />}
               {activeTab === "analytics" && <AnalyticsView onAction={() => setIsSettingsOpen(true)} />}
-              {activeTab === "brief" && <BriefView />}
+              {activeTab === "brief" && <BriefView onAction={() => setIsSettingsOpen(true)} />}
               {activeTab === "datagrid" && <DataGridView />}
             </div>
           </main>
