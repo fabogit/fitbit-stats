@@ -5,6 +5,7 @@ import json
 from pydantic import BaseModel, Field, validator
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from modules.briefing import get_daily_brief
 
 # Change working directory so relative paths in config.py work correctly
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -168,17 +169,13 @@ async def clear_data():
 
 @app.post("/api/brief")
 async def run_brief(payload: dict = None):
-    """Executes the daily briefing script to generate a textual health summary."""
-    # payload can contain {"date": "YYYY-MM-DD"}
-    cmd = [sys.executable, "daily_brief.py"]
-    if payload and payload.get("date"):
-        cmd.extend(["--date", payload["date"]])
-
+    """Generates a structured daily health briefing."""
+    date = payload.get("date") if payload else None
     try:
-        # For brief, we want the output back
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, check=False)
-        return {"status": "done", "output": result.stdout}
+        brief = get_daily_brief(date)
+        if "error" in brief:
+            raise HTTPException(status_code=404, detail=brief["error"])
+        return brief
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

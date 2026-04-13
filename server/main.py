@@ -90,7 +90,7 @@ def main():
         print(df[[c for c in cols if c in df.columns]].head())
 
         # 4. Export
-        df.to_csv("fitbit_analysis.csv")  # Required for daily_brief.py
+        df.to_csv("fitbit_analysis.csv")  # Required for BRIEFING module
         etl.export_to_json(df)
     else:
         print("[main.py] ERROR: No valid data found in the specified directory.", file=sys.stderr)
