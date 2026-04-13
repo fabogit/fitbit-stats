@@ -41,8 +41,6 @@ build/
 
 package-lock.json
 yarn.lock
-pnpm-lock.yaml
-pnpm-workspace.yaml
 
 npm-debug.log*
 yarn-debug.log*
