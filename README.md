@@ -10,7 +10,7 @@ A comprehensive, **cross-platform Desktop Application** designed to locally anal
 
 - **Tauri v2 Wrapper:** Provides a lightweight native OS window with full filesystem sandboxing capabilities and native directory pickers.
 - **Python Sidecar (Engine):** A standalone executable compiled with PyInstaller. It heavily utilizes Pandas for ETL and metabolic math without requiring the user to have Python installed.
-- **Privacy-First (100% Offline):** Your health data never leaves your computer. The Python engine computes the metrics and safely writes them to your highly-isolated local `AppData` directory (`$APPDATA/com.fitstats.app`). React reads it from there seamlessly.
+- **Privacy-First (100% Offline):** Your health data never leaves your computer. The Python engine computes the metrics and safely writes them to your highly-isolated local `AppData` directory (`$APPDATA/com.fitstats`). React reads it from there seamlessly.
 
 ### 📊 Analytics & Metrics
 
@@ -24,6 +24,7 @@ A comprehensive, **cross-platform Desktop Application** designed to locally anal
 ### ⚡ Server Architecture
 
 The internal backend leverages an Event-Driven, highly asynchronous design:
+
 - Heavy Data Merging (ETL) is spawned seamlessly into **BackgroundTasks**, eliminating HTTP route blocking.
 - A persistent, full-duplex **WebSocket (`/ws/status`)** continuously streams real-time status updates directly to the Frontend (React hooks / Angular observables). This eliminates polling and provides robust scalability even for datasets spanning multiple years.
 
