@@ -25,6 +25,11 @@ def load_session_config():
             print(f"Error loading session config: {e}")
 
 
+def progress(pct, msg):
+    """Emit a structured progress line for the API to parse and broadcast via WebSocket."""
+    print(f"PROGRESS:{pct}:{msg}", flush=True)
+
+
 def main():
     """Entrypoint for the Fitbit Stats ETL Engine. Orchestrates data merging, metric calculation, and output export."""
     parser = argparse.ArgumentParser(description="Fitbit Stats ETL Engine")
@@ -47,6 +52,7 @@ def main():
     args = parser.parse_args()
 
     # 0. Load shared session config first
+    progress(5, "Loading configuration")
     load_session_config()
 
     # Override with CLI arguments if provided
@@ -75,12 +81,18 @@ def main():
         return
 
     # 1. Load & Merge
-    df = etl.merge_all_data()
+    progress(10, "Loading and merging data files")
+    df = etl.merge_all_data(progress_callback=progress)
 
     if df is not None:
         # 2. Calculate Metrics
+        progress(70, "Calculating readiness metrics")
         df = metrics.calculate_readiness(df)
+
+        progress(75, "Calculating metabolic metrics")
         df = metrics.calculate_metabolic_metrics(df)
+
+        progress(80, "Calculating advanced metrics")
         df = metrics.calculate_advanced_metrics(df)
 
         # 3. Preview
@@ -90,8 +102,13 @@ def main():
         print(df[[c for c in cols if c in df.columns]].head())
 
         # 4. Export
+        progress(90, "Exporting analysis CSV")
         df.to_csv("fitbit_analysis.csv")  # Required for BRIEFING module
+
+        progress(95, "Exporting dashboard JSON")
         etl.export_to_json(df)
+
+        progress(100, "Complete")
     else:
         print("[main.py] ERROR: No valid data found in the specified directory.", file=sys.stderr)
         sys.exit(1)

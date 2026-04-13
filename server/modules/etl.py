@@ -115,7 +115,7 @@ def get_data_date_range():
     return min(dates).strftime('%Y-%m-%d'), max(dates).strftime('%Y-%m-%d')
 
 
-def merge_all_data():
+def merge_all_data(progress_callback=None):
     """
     Main ETL Orchestrator.
 
@@ -124,6 +124,9 @@ def merge_all_data():
     3. Merges all collections into a single Master DataFrame using Outer Join.
     4. Fills NaN values with 0 for activity-based columns.
     5. Performs final cleanup to remove empty or future rows based on calorie data.
+
+    Args:
+        progress_callback: Optional callable(pct, msg) for progress reporting.
 
     Returns:
         pd.DataFrame: The fully processed Master Dataset ready for analysis.
@@ -138,48 +141,56 @@ def merge_all_data():
     date_str = f"{config.START_DATE} to {config.END_DATE}" if config.START_DATE else "All Time"
     print(f"\n=== BUILDING MASTER DATASET ({date_str}) ===")
 
-    # Define Loading Plan: (Folder, Pattern, Parser)
+    # Define Loading Plan: (Folder, Pattern, Parser, Label)
     load_plan = [
         ("Global Export Data", "resting_heart_rate-*.json",
-         parsers.parse_resting_heart_rate),
+         parsers.parse_resting_heart_rate, "Resting heart rate"),
         ("Global Export Data", "heart_rate-*.json",
-         parsers.parse_heart_rate_intraday_summary),
-        ("Global Export Data", "steps-*.json", parsers.parse_steps_json),
-        ("Global Export Data", "distance-*.json", parsers.parse_distance_json),
-        ("Global Export Data", "exercise-*.json", parsers.parse_exercise_json),
-        ("Global Export Data", "weight-*.json", parsers.parse_weight),
-        ("Global Export Data", "calories-*.json", parsers.parse_calories_intraday),
-        ("Sleep Score", "sleep_score.csv", parsers.parse_sleep_score_csv),
-        ("Global Export Data", "sleep-*.json", parsers.parse_sleep_json_detailed),
-        ("Oxygen Saturation (SpO2)", "Daily SpO2 - *.csv", parsers.parse_spo2_csv),
+         parsers.parse_heart_rate_intraday_summary, "Heart rate intraday"),
+        ("Global Export Data", "steps-*.json", parsers.parse_steps_json, "Steps"),
+        ("Global Export Data", "distance-*.json", parsers.parse_distance_json, "Distance"),
+        ("Global Export Data", "exercise-*.json", parsers.parse_exercise_json, "Exercise sessions"),
+        ("Global Export Data", "weight-*.json", parsers.parse_weight, "Weight"),
+        ("Global Export Data", "calories-*.json", parsers.parse_calories_intraday, "Calories"),
+        ("Sleep Score", "sleep_score.csv", parsers.parse_sleep_score_csv, "Sleep scores"),
+        ("Global Export Data", "sleep-*.json", parsers.parse_sleep_json_detailed, "Sleep stages"),
+        ("Oxygen Saturation (SpO2)", "Daily SpO2 - *.csv", parsers.parse_spo2_csv, "SpO2"),
         ("Heart Rate Variability",
-         "Daily Heart Rate Variability Summary - *.csv", parsers.parse_hrv_csv),
-        ("Stress Score", "Stress Score.csv", parsers.parse_stress_csv),
+         "Daily Heart Rate Variability Summary - *.csv", parsers.parse_hrv_csv, "HRV"),
+        ("Stress Score", "Stress Score.csv", parsers.parse_stress_csv, "Stress scores"),
         ("Global Export Data", "very_active_minutes-*.json",
-         parsers.parse_simple_activity_json),
+         parsers.parse_simple_activity_json, "Active minutes"),
         ("Global Export Data", "moderately_active_minutes-*.json",
-         parsers.parse_simple_activity_json),
+         parsers.parse_simple_activity_json, "Moderate activity"),
         ("Global Export Data", "lightly_active_minutes-*.json",
-         parsers.parse_simple_activity_json),
+         parsers.parse_simple_activity_json, "Light activity"),
         ("Global Export Data", "sedentary_minutes-*.json",
-         parsers.parse_simple_activity_json),
+         parsers.parse_simple_activity_json, "Sedentary minutes"),
         ("Physical Activity_GoogleData",
-         "cardio_acute_chronic_workload_ratio.csv", parsers.parse_acwr_csv),
+         "cardio_acute_chronic_workload_ratio.csv", parsers.parse_acwr_csv, "ACWR"),
         ("Physical Activity_GoogleData",
-         "demographic_vo2max.csv", parsers.parse_vo2max_csv),
+         "demographic_vo2max.csv", parsers.parse_vo2max_csv, "VO2 Max"),
         ("Physical Activity_GoogleData",
-         "daily_readiness.csv", parsers.parse_readiness_csv),
+         "daily_readiness.csv", parsers.parse_readiness_csv, "Readiness"),
         ("Physical Activity_GoogleData", "daily_respiratory_rate.csv",
-         parsers.parse_respiratory_rate_csv),
+         parsers.parse_respiratory_rate_csv, "Respiratory rate"),
         ("Physical Activity_GoogleData", "daily_sleep_temperature_derivations.csv",
-         parsers.parse_skin_temperature_csv),
+         parsers.parse_skin_temperature_csv, "Skin temperature"),
         ("Physical Activity_GoogleData", "time_in_heart_rate_zone_*.csv",
-         parsers.parse_active_zones_csv),
+         parsers.parse_active_zones_csv, "HR zones"),
     ]
 
+    total = len(load_plan)
     datasets = []
-    for folder, pattern, func in load_plan:
+    for i, (folder, pattern, func, label) in enumerate(load_plan):
+        # Progress from 10% to 65% spread across all collections
+        pct = 10 + int((i / total) * 55)
+        if progress_callback:
+            progress_callback(pct, f"Loading {label}")
         datasets.append(load_collection(folder, pattern, func))
+
+    if progress_callback:
+        progress_callback(65, "Merging datasets")
 
     # Filter empty datasets
     datasets = [d for d in datasets if not d.empty]
