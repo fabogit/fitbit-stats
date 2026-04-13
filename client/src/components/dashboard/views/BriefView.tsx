@@ -9,14 +9,19 @@ import { useAppSelector } from "@/store/store";
 import { NoDataState } from "../NoDataState";
 
 export function BriefView({ onAction }: { onAction?: () => void }) {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const { filteredData, minDataDate, maxDataDate } = useAppSelector((state) => state.dashboard);
+  const [date, setDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [briefData, setBriefData] = useState<ParsedBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (filteredData.length === 0) {
     return <NoDataState onAction={onAction} />;
+  }
+
+  // Initialize date to maxDataDate if it hasn't been set yet
+  if (!date && maxDataDate) {
+    setDate(maxDataDate);
   }
 
   const handleGenerate = async () => {
@@ -64,6 +69,8 @@ export function BriefView({ onAction }: { onAction?: () => void }) {
               type="date"
               className="pl-9 w-full xs:w-[160px] h-9 border-none bg-transparent focus-visible:ring-0 cursor-pointer font-medium text-sm"
               value={date}
+              min={minDataDate}
+              max={maxDataDate}
               onChange={(e) => setDate(e.target.value)}
             />
           </div>
