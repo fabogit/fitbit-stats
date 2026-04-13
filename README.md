@@ -1,4 +1,4 @@
-# Fitbit Personal Health Analytics & Dashboard (V3.0 Desktop)
+# FitStats: Personal Health Analytics & Dashboard (V3.x Desktop)
 
 A comprehensive, **cross-platform Desktop Application** designed to locally analyze, visualize, and benchmark personal health data exported from Fitbit.
 
@@ -45,6 +45,15 @@ You do **not** need to touch any code or terminal to use this application!
 5. **Browse** and select your completely unzipped RAW Fitbit Export folder (the overarching one containing folders like `Physical Activity`, `Sleep`, etc.).
 6. Click **Calculate**. The app will do the heavy lifting in the background and load your interactive dashboard.
 
+#### 🍎 Special Note for macOS Users (M1/M2/M3/M4)
+As the application is currently distributed without a paid Apple Developer certificate, macOS Gatekeeper may flag it as "damaged" or from an "unidentified developer." 
+
+To fix this, open your **Terminal** and run:
+```bash
+xattr -cr /Applications/FitStats.app
+```
+*(Or drag the app icon into the terminal after typing `xattr -cr `).* This removes the quarantine flag and allows the app to start normally.
+
 _(Note: The app remembers your biometrics and folder path securely inside your OS's AppData for subsequent launches!)_
 
 ---
@@ -79,7 +88,15 @@ If you wish to modify the code, you will need to run the hybrid stack locally.
 
 1. **Python 3.14+**
 2. **Node.js 24.12+** & **pnpm 10+**
-3. **Rust Toolchain** (cargo) & Tauri dependencies
+3. **Rust Toolchain:** Install via [rustup.rs](https://rustup.rs/).
+4. **System Dependencies:**
+   - **Linux (Debian/Ubuntu):**
+     ```bash
+     sudo apt-get update
+     sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+     ```
+   - **macOS:** Install Xcode Command Line Tools: `xcode-select --install`.
+   - **Windows:** Install [WebView2 runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) and C++ Build Tools.
 
 ### 1. Compile the Python Sidecar
 
@@ -95,10 +112,19 @@ pip install pyinstaller
 # Compile standalone executable
 pyinstaller --clean fitstats-engine.spec
 
-# Move the executable to Tauri's bin directory with the correct target-triple specific name
-# e.g., on Linux x86_64:
+#### Sidecar Naming Convention
+Tauri requires sidecars to have a specific suffix based on the **target triple**. You can find your triple by running `rustc -Vv | grep host`.
+
+Common names:
+- **Mac (Silicon):** `fitstats-engine-aarch64-apple-darwin`
+- **Mac (Intel):** `fitstats-engine-x86_64-apple-darwin`
+- **Linux:** `fitstats-engine-x86_64-unknown-linux-gnu`
+- **Windows:** `fitstats-engine-x86_64-pc-windows-msvc.exe`
+
+```bash
+# Example for Mac M1/M2/M3/M4:
 mkdir -p ../client/src-tauri/bin
-cp dist/fitstats-engine ../client/src-tauri/bin/fitstats-engine-x86_64-unknown-linux-gnu
+cp dist/fitstats-engine ../client/src-tauri/bin/fitstats-engine-aarch64-apple-darwin
 ```
 
 ### 2. Run the Tauri App
@@ -106,8 +132,12 @@ cp dist/fitstats-engine ../client/src-tauri/bin/fitstats-engine-x86_64-unknown-l
 ```bash
 cd client
 pnpm install
-# Start the Vite development server + Tauri Window
+
+# Option A: Development mode (with Hot Reload and Debug Console)
 pnpm tauri dev
+
+# Option B: Build a final production installer (DMG, MSI, AppImage, etc.)
+pnpm tauri build
 ```
 
 ---
@@ -116,9 +146,19 @@ pnpm tauri dev
 
 This repository is equipped with a fully automated Release Pipeline designed to cross-compile the application for all major Operating Systems at once without needing physical hardware.
 
-- **Trigger:** The workflow is triggered automatically when a new Git tag starting with `v` is pushed to the repository (e.g., `git tag v1.0.0 && git push --tags`).
+- **Trigger:** The workflow is triggered automatically when a new Git tag starting with `v` is pushed to the repository (e.g., `git tag v3.1.0 && git push origin v3.1.0`).
 - **Matrix Strategy:** It spins up three parallel cloud instances (`ubuntu-latest`, `macos-latest`, `windows-latest`).
-- **Build Flow:** For each OS, it installs Python & Node, compiles the Python engine via PyInstaller into its native flavor (`.exe` on Win, macOS binary, Linux ELF), bundles it into the Tauri workflow utilizing `tauri-apps/tauri-action`, and uploads the final installers directly to the GitHub Release page.
+- **Version Automation:** The CI/CD pipeline uses `client/package.json` as the single source of truth. The version defined there is automatically injected into the Tauri configuration and used to name all generated artifacts (e.g., `FitStats_3.1.0_aarch64.dmg`).
+- **Signing:** Includes automated ad-hoc signing for macOS binaries (Sidecars and App Bundle) to ensure compatibility with Apple Silicon security requirements.
+
+---
+
+## 🏛 Legacy Versions
+
+If you are looking for older versions of the project:
+- **[v1 (Legacy)](../../tree/v1):** The original Python scripts and basic data parsing.
+- **[v2 (Legacy)](../../tree/v2):** The first React web interface with Docker support.
+- **[Standalone](../../tree/main):** The current active development branch (v3.x).
 
 ---
 
