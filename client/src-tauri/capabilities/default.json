@@ -10,7 +10,10 @@
     "shell:default",
     {
       "identifier": "shell:allow-execute",
-      "allow": [{ "name": "bin/fitstats-engine", "args": true, "sidecar": true }]
+      "allow": [
+        { "name": "bin/fitstats-engine", "args": true, "sidecar": true },
+        { "name": "bin/fitstats-server", "args": true, "sidecar": true }
+      ]
     },
     "fs:allow-appdata-read-recursive",
     "fs:allow-appdata-write-recursive",

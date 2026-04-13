@@ -9,7 +9,7 @@ import json
 
 def load_session_config():
     """Loads biometric properties from the local session_config.json if available."""
-    config_path = "session_config.json"
+    config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
     if os.path.exists(config_path):
         try:
             with open(config_path, 'r') as f:
