@@ -101,7 +101,7 @@ function App() {
           onRecalculate={() => setIsSettingsOpen(true)}
         />
 
-        <div className="flex flex-1 relative overflow-hidden h-[calc(100vh-64px)]">
+        <div className="flex flex-1 relative overflow-hidden h-[calc(100vh-64px)] mt-16">
           {/* --- MOBILE BACKDROP OVERLAY --- */}
           {isSidebarOpen && (
             <div
