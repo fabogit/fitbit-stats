@@ -1,32 +1,44 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Calendar, Play, Loader2, Activity, Info, Sparkles } from "lucide-react";
-import { parseBrief } from "@/lib/briefParser";
+import { type ParsedBrief } from "@/lib/briefParser";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { useAppSelector } from "@/store/store";
+import { NoDataState } from "../NoDataState";
 
-export function BriefView() {
+export function BriefView({ onAction }: { onAction?: () => void }) {
+  const { filteredData } = useAppSelector((state) => state.dashboard);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
-  const [rawOutput, setRawOutput] = useState<string | null>(null);
+  const [briefData, setBriefData] = useState<ParsedBrief | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const parsedData = useMemo(() => rawOutput ? parseBrief(rawOutput) : null, [rawOutput]);
+  if (filteredData.length === 0) {
+    return <NoDataState onAction={onAction} />;
+  }
 
   const handleGenerate = async () => {
     setLoading(true);
-    setRawOutput(null);
+    setBriefData(null);
+    setError(null);
     try {
       const resp = await fetch("http://localhost:8000/api/brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date }),
       });
+      
+      if (!resp.ok) {
+        throw new Error(`Server error: ${resp.statusText}`);
+      }
+      
       const data = await resp.json();
-      setRawOutput(data.output);
+      setBriefData(data);
     } catch (e) {
       console.error(e);
-      setRawOutput("Error generating brief. Check backend logs.");
+      setError("Error generating brief. Check backend logs.");
     } finally {
       setLoading(false);
     }
@@ -70,7 +82,7 @@ export function BriefView() {
         </div>
       </div>
 
-      {!rawOutput && !loading && (
+      {!briefData && !loading && !error && (
         <Card className="border-dashed border-2 py-16 md:py-24 bg-transparent flex flex-col items-center justify-center text-center px-6">
           <div className="p-4 rounded-full bg-primary/5 mb-4">
             <Activity className="h-10 w-10 text-primary/40" />
@@ -78,9 +90,15 @@ export function BriefView() {
           <div className="space-y-2">
             <p className="text-lg font-medium">Ready for your briefing?</p>
             <p className="text-sm text-muted-foreground max-w-[320px]">
-              Select a date and click Generate to receive a detailed analysis powered by AI.
+              Select a date and click Generate to receive a detailed analysis of your health metrics.
             </p>
           </div>
+        </Card>
+      )}
+
+      {error && !loading && (
+        <Card className="border-destructive/20 bg-destructive/5 py-12 flex flex-col items-center justify-center text-center px-6">
+           <p className="text-destructive font-medium">{error}</p>
         </Card>
       )}
 
@@ -90,13 +108,13 @@ export function BriefView() {
             <Loader2 className="h-12 w-12 text-primary animate-spin" />
             <Sparkles className="h-5 w-5 text-yellow-500 absolute -top-1 -right-1 animate-pulse" />
           </div>
-          <p className="text-sm text-muted-foreground animate-pulse">AI is distilling your metrics...</p>
+          <p className="text-sm text-muted-foreground animate-pulse">Calculating your briefing...</p>
         </div>
       )}
 
-      {parsedData && !loading && (
+      {briefData && !loading && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-          {parsedData.sections.map((section, idx) => (
+          {briefData.sections.map((section, idx) => (
             <Card key={idx} className="overflow-hidden border-primary/10 bg-card/40 backdrop-blur-lg hover:border-primary/20 transition-all duration-300 flex flex-col">
               <CardHeader className="py-3 px-4 md:px-6 border-b border-border/50 bg-muted/20">
                 <div className="flex items-center gap-3">
@@ -133,7 +151,7 @@ export function BriefView() {
                       <Info className="h-3.5 w-3.5 text-primary" />
                     </div>
                     <div className="space-y-0.5">
-                      <p className="text-[9px] uppercase font-bold text-primary tracking-widest leading-none">AI Insight</p>
+                      <p className="text-[9px] uppercase font-bold text-primary tracking-widest leading-none">Insight</p>
                       <p className="text-xs md:text-sm font-medium leading-relaxed text-foreground/90">{section.advice}</p>
                     </div>
                   </div>
@@ -144,10 +162,10 @@ export function BriefView() {
         </div>
       )}
 
-      {parsedData && !loading && (
+      {briefData && !loading && (
         <div className="mt-8 pt-4 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-2 px-2">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">{parsedData.profile}</span>
-          <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Last Generated: {parsedData.date}</span>
+          <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">{briefData.profile}</span>
+          <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Last Generated: {briefData.date}</span>
         </div>
       )}
     </div>
@@ -168,5 +186,5 @@ function getTooltipContent(title: string) {
   if (t.includes("SLEEP")) return "Qualitative breakdown of your sleep cycles and duration.";
   if (t.includes("READINESS")) return "Composite analysis of your current state compared to your historical baseline.";
   if (t.includes("METABOLISM")) return "Insight into energy expenditure and activity intensity.";
-  return "AI-generated insights for this health category.";
+  return "Insights for this health category.";
 }
