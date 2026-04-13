@@ -23,10 +23,11 @@ A comprehensive, **cross-platform Desktop Application** designed to locally anal
 
 ### ⚡ Server Architecture
 
-The internal backend leverages an Event-Driven, highly asynchronous design:
+The project has evolved into a unified **FastAPI backend** that serves both the Tauri desktop environment and standalone Docker deployments:
 
-- Heavy Data Merging (ETL) is spawned seamlessly into **BackgroundTasks**, eliminating HTTP route blocking.
-- A persistent, full-duplex **WebSocket (`/ws/status`)** continuously streams real-time status updates directly to the Frontend (React hooks / Angular observables). This eliminates polling and provides robust scalability even for datasets spanning multiple years.
+- **Unified API:** Centralizes ETL, metabolic math, and health briefing logic.
+- **Asynchronous Processing:** Heavy Data Merging (ETL) is spawned seamlessly into **BackgroundTasks**, eliminating HTTP route blocking.
+- **Real-time Updates:** A persistent, full-duplex **WebSocket (`/ws/status`)** continuously streams real-time status updates directly to the Frontend, eliminating polling and providing robust scalability.
 
 ---
 
@@ -45,6 +46,28 @@ You do **not** need to touch any code or terminal to use this application!
 6. Click **Calculate**. The app will do the heavy lifting in the background and load your interactive dashboard.
 
 _(Note: The app remembers your biometrics and folder path securely inside your OS's AppData for subsequent launches!)_
+
+---
+
+## 🐳 Docker Deployment
+
+For users who prefer a web-based interface or home lab deployment, a full Docker stack is provided.
+
+### Quick Start
+
+1. Ensure you have **Docker** and **Docker Compose** installed.
+2. Clone this repository.
+3. Place your unzipped Fitbit export in a folder named `data` in the project root (or modify the volume mount in `docker-compose.yml`).
+4. Run the stack:
+   ```bash
+   docker-compose up -d --build
+   ```
+5. Open your browser to [**http://localhost:8080**](http://localhost:8080).
+
+### Services
+- **Frontend (port 8080):** The web dashboard served by Nginx.
+- **API Server (port 8000):** The Python/FastAPI engine handling calculations.
+- **Engine Watcher:** An optional background service that automatically triggers a re-calculate when files in the `data/` directory are modified.
 
 ---
 
