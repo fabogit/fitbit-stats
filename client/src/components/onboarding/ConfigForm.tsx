@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { CheckCircle2, AlertCircle, Search, Loader2, Trash2 } from "lucide-react";
 import { useAppDispatch } from "../../store/store";
-import { fetchHealthData, setIsProcessing } from "../../features/dashboard/dashboardSlice";
+import { fetchHealthData, setIsProcessing, setEtlProgress } from "../../features/dashboard/dashboardSlice";
 
 interface ConfigFormProps {
   onSuccess: () => void;
@@ -307,7 +307,9 @@ export function ConfigForm({
           ws.onmessage = (event) => {
             try {
               const data = JSON.parse(event.data);
-              if (data.event === "etl_finished") {
+              if (data.event === "etl_progress") {
+                dispatch(setEtlProgress({ progress: data.progress, step: data.step }));
+              } else if (data.event === "etl_finished") {
                 dispatch(setIsProcessing(false));
                 ws.close();
                 if (data.status === "success") {
