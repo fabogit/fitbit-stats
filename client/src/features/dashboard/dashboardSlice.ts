@@ -5,29 +5,60 @@ import {
 } from "@reduxjs/toolkit";
 import type { HealthRecord, DateRange } from "@/types/health";
 import { subMonths, parseISO, format } from "date-fns";
+import { isTauri } from "@tauri-apps/api/core";
+import { readTextFile, BaseDirectory } from "@tauri-apps/plugin-fs";
 
 interface DashboardState {
   data: HealthRecord[];
   filteredData: HealthRecord[];
   dateRange: DateRange | null;
+  minDataDate: string;
+  maxDataDate: string;
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
+  isProcessing: boolean;
+  etlProgress: number;
+  etlStep: string;
 }
 
 const initialState: DashboardState = {
   data: [],
   filteredData: [],
   dateRange: null,
+  minDataDate: "",
+  maxDataDate: "",
   status: "idle",
   error: null,
+  isProcessing: false,
+  etlProgress: 0,
+  etlStep: "",
 };
 
 export const fetchHealthData = createAsyncThunk(
   "dashboard/fetchHealthData",
   async () => {
-    const response = await fetch("/dashboard_data.json");
-    if (!response.ok) throw new Error("Failed to load dashboard data");
-    return (await response.json()) as HealthRecord[];
+    try {
+      if (isTauri()) {
+        try {
+          const content = await readTextFile("dashboard_data.json", { baseDir: BaseDirectory.AppData });
+          return JSON.parse(content) as HealthRecord[];
+        } catch (fileErr) {
+          console.warn("dashboard_data.json not found locally. (Normal on first run)", fileErr);
+          return [];
+        }
+      } else {
+        const response = await fetch("/dashboard_data.json");
+        if (response.status === 404) {
+          console.warn("dashboard_data.json not found (normal on first run)");
+          return [];
+        }
+        if (!response.ok) throw new Error("Failed to load dashboard data");
+        return (await response.json()) as HealthRecord[];
+      }
+    } catch (e) {
+      console.error("Error fetching dashboard data:", e);
+      return []; // Return empty array instead of failing the state
+    }
   },
   {
     // --- CACHING LOGIC ---
@@ -60,6 +91,17 @@ const dashboardSlice = createSlice({
         state.filteredData = state.data;
       }
     },
+    setIsProcessing(state, action: PayloadAction<boolean>) {
+      state.isProcessing = action.payload;
+      if (!action.payload) {
+        state.etlProgress = 0;
+        state.etlStep = "";
+      }
+    },
+    setEtlProgress(state, action: PayloadAction<{ progress: number; step: string }>) {
+      state.etlProgress = action.payload.progress;
+      state.etlStep = action.payload.step;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -71,8 +113,11 @@ const dashboardSlice = createSlice({
         state.data = action.payload;
 
         if (action.payload.length > 0) {
-          const lastRecord = action.payload[action.payload.length - 1];
           const firstRecord = action.payload[0];
+          const lastRecord = action.payload[action.payload.length - 1];
+
+          state.minDataDate = firstRecord.date;
+          state.maxDataDate = lastRecord.date;
 
           const endDate = lastRecord.date;
 
@@ -97,5 +142,9 @@ const dashboardSlice = createSlice({
   },
 });
 
-export const { setDateRange, resetFilter } = dashboardSlice.actions;
+export const { setDateRange, resetFilter, setIsProcessing, setEtlProgress } = dashboardSlice.actions;
+
+export const selectFilteredData = (state: { dashboard: DashboardState }) => state.dashboard.filteredData;
+export const selectDashboardStatus = (state: { dashboard: DashboardState }) => state.dashboard.status;
+
 export default dashboardSlice.reducer;

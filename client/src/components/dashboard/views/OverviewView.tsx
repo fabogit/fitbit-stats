@@ -1,6 +1,18 @@
 import { KpiGrid } from "../KpiGrid";
+import { useAppSelector } from "@/store/store";
+import { NoDataState } from "../NoDataState";
 
-export function OverviewView() {
+export function OverviewView({ onAction }: { onAction?: () => void }) {
+  const { filteredData } = useAppSelector((state) => state.dashboard);
+
+  if (filteredData.length === 0) {
+    return (
+      <NoDataState 
+        onAction={onAction} 
+      />
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div>

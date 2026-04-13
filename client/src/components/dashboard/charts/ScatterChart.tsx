@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import {
   ScatterChart as ReScatter,
   Scatter,
@@ -26,26 +27,28 @@ interface CustomTooltipProps {
   }>;
 }
 
-export function ScatterChart() {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+export const ScatterChart = memo(function ScatterChart() {
+  const filteredData = useAppSelector((state) => state.dashboard.filteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
   const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
 
-  const scatterData = filteredData
-    .filter(
-      (d) =>
-        d.calories_total > 0 && d.overall_score !== null && d.overall_score > 0
-    )
-    .map((d) => ({
-      x: d.calories_total,
-      y: d.overall_score,
-      date: d.date,
-      calories_total: d.calories_total,
-      overall_score: d.overall_score,
-    }));
+  const scatterData = useMemo(() => {
+    return filteredData
+      .filter(
+        (d) =>
+          d.calories_total > 0 && d.overall_score !== null && d.overall_score > 0
+      )
+      .map((d) => ({
+        x: d.calories_total,
+        y: d.overall_score,
+        date: d.date,
+        calories_total: d.calories_total,
+        overall_score: d.overall_score,
+      }));
+  }, [filteredData]);
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
+    <div className="bg-card border border-border rounded-xl p-4 md:p-6 shadow-sm h-full flex flex-col">
       <div className="flex items-center mb-4">
         <h3 className="text-lg font-semibold text-card-foreground">
           Correlation: Activity vs Sleep
@@ -65,7 +68,7 @@ export function ScatterChart() {
       </div>
 
       <div className="h-[300px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <ReScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
             <CartesianGrid
               strokeDasharray="3 3"
@@ -78,6 +81,7 @@ export function ScatterChart() {
               name="Calories"
               stroke={axisColor}
               tick={{ fontSize: 12 }}
+              tickFormatter={(val) => Math.round(val).toLocaleString()}
               label={{
                 value: "Calories Burned",
                 position: "insideBottom",
@@ -93,6 +97,7 @@ export function ScatterChart() {
               stroke={axisColor}
               tick={{ fontSize: 12 }}
               domain={[50, 100]}
+              tickFormatter={(val) => Math.round(val).toString()}
               label={{
                 value: "Sleep Score",
                 angle: -90,
@@ -115,7 +120,7 @@ export function ScatterChart() {
       </div>
     </div>
   );
-}
+});
 
 /** Alias */
 const ReScatterChart = ReScatter;

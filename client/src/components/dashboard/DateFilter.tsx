@@ -13,13 +13,11 @@ import { cn } from "@/lib/utils";
 
 export function DateFilter() {
   const dispatch = useAppDispatch();
-  const { dateRange, data } = useAppSelector((state) => state.dashboard);
+  const { dateRange, data, minDataDate, maxDataDate } = useAppSelector((state) => state.dashboard);
   const [activePreset, setActivePreset] = useState<string>("3M");
 
-  const minDate = data.length > 0 ? data[0].date : "";
-  const lastDataDate = data.length > 0 ? data[data.length - 1].date : "";
-  const today = format(new Date(), "yyyy-MM-dd");
-  const maxDate = lastDataDate > today ? today : lastDataDate;
+  const minDate = minDataDate;
+  const maxDate = maxDataDate;
 
   const presets = [
     { label: "1M", months: 1 },
@@ -86,33 +84,7 @@ export function DateFilter() {
         </div>
       </div>
 
-      <div className="space-y-3">
-        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
-          Quick Filters
-        </div>
-
-        {/* Presets Grid */}
-        <div className="grid grid-cols-3 gap-2">
-          {presets.map((preset) => (
-            <button
-              key={preset.label}
-              onClick={() =>
-                applyPreset(preset.months, preset.type, preset.label)
-              }
-              className={cn(
-                "px-2 py-1.5 text-xs font-medium rounded border transition-all duration-200",
-                activePreset === preset.label
-                  ? "bg-primary text-primary-foreground border-primary shadow-md"
-                  : "bg-card text-card-foreground border-border hover:bg-accent hover:text-accent-foreground"
-              )}
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Manual Inputs */}
+      {/* Manual Inputs (Custom Range) - Moved up */}
       <div className="space-y-2 pt-2 border-t border-border">
         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-2">
           Custom Range
@@ -148,6 +120,33 @@ export function DateFilter() {
               setActivePreset("CUSTOM");
             }}
           />
+        </div>
+      </div>
+
+      {/* Quick Filters - Moved down */}
+      <div className="space-y-3 pt-2 border-t border-border">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
+          Quick Filters
+        </div>
+
+        {/* Presets Grid */}
+        <div className="grid grid-cols-3 gap-2">
+          {presets.map((preset) => (
+            <button
+              key={preset.label}
+              onClick={() =>
+                applyPreset(preset.months, preset.type, preset.label)
+              }
+              className={cn(
+                "px-2 py-1.5 text-xs font-medium rounded border transition-all duration-200",
+                activePreset === preset.label
+                  ? "bg-primary text-primary-foreground border-primary shadow-md"
+                  : "bg-card text-card-foreground border-border hover:bg-accent hover:text-accent-foreground"
+              )}
+            >
+              {preset.label}
+            </button>
+          ))}
         </div>
       </div>
     </div>

@@ -1,0 +1,133 @@
+name: Release FitStats (Multi-Platform)
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers only on tag pushes (e.g. git tag v1.0.0 && git push origin v1.0.0)
+
+jobs:
+  build-and-release:
+    permissions:
+      contents: write # Allows Actions to upload the final files to the repo's Release folder
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js (Vite Frontend)
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+          cache: true
+          cache_dependency_path: client/pnpm-lock.yaml
+
+      - name: Setup Python (PyInstaller Backend)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: "pip"
+          cache-dependency-path: server/requirements.txt
+
+      - name: Setup Rust (Tauri Core)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri -> target
+
+      - name: Install system dependencies (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Build Python Sidecars (Engine & Server)
+        working-directory: ./server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+          pyinstaller --clean fitstats-engine.spec
+          pyinstaller --clean fitstats-server.spec
+
+      - name: Move Sidecars to Tauri Bin directory
+        shell: bash
+        run: |
+          mkdir -p client/src-tauri/bin
+          # Determine file extension
+          EXT=""
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then EXT=".exe"; fi
+
+          # Move both sidecars with the target triple Tauri expects
+          cp server/dist/fitstats-engine$EXT client/src-tauri/bin/fitstats-engine-${{ matrix.target }}$EXT
+          cp server/dist/fitstats-server$EXT client/src-tauri/bin/fitstats-server-${{ matrix.target }}$EXT
+
+          # Secure execution permissions for Unix-like systems (macOS and Linux)
+          if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
+            chmod +x client/src-tauri/bin/fitstats-engine-${{ matrix.target }}
+            chmod +x client/src-tauri/bin/fitstats-server-${{ matrix.target }}
+
+            # Add ad-hoc signing specially for macOS (Apple Silicon requirement)
+            if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+              codesign --force --sign - client/src-tauri/bin/fitstats-engine-${{ matrix.target }}
+              codesign --force --sign - client/src-tauri/bin/fitstats-server-${{ matrix.target }}
+            fi
+          fi
+
+          # Verify local copy
+          ls -R client/src-tauri/bin/
+
+      - name: Install React dependencies
+        working-directory: ./client
+        run: pnpm install
+
+      - name: Run Linter (Guard)
+        working-directory: ./client
+        run: pnpm run lint
+
+      - name: Sync version from package.json to tauri.conf.json
+        shell: bash
+        run: |
+          # Source of Truth: Version is automatically read from client/package.json.
+          VERSION=$(jq -r .version client/package.json)
+          echo "Setting version to $VERSION (from package.json)"
+          jq ".version = \"$VERSION\"" client/src-tauri/tauri.conf.json > tauri.conf.json.tmp && mv tauri.conf.json.tmp client/src-tauri/tauri.conf.json
+
+      - name: Build and Publish with Tauri (Automatic Release)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ./client
+          tagName: ${{ github.ref_name }} # Use the same name as the Tag (e.g. v1.0.0)
+          releaseName: "FitStats ${{ github.ref_name }}"
+          releaseBody: |
+            New auto-compiled native multi-platform release for Mac 🍎, Windows 🖥️, and Linux 🐧.
+
+            ### 🍎 Note for macOS users (Apple Silicon M-series)
+            If you see the "App is damaged" or "Unidentified Developer" error, open a Terminal and type:
+            ```bash
+            xattr -cr /Applications/FitStats.app
+            ```
+            *(Or drag the app into the terminal after typing `xattr -cr `)*
+          releaseDraft: false
+          prerelease: false
