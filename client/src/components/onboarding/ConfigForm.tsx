@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Command } from "@tauri-apps/plugin-shell";
-import { appDataDir } from "@tauri-apps/api/path";
-import { exists, readTextFile, writeTextFile, BaseDirectory, mkdir, remove } from "@tauri-apps/plugin-fs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -43,10 +40,9 @@ export function ConfigForm({
 
   useEffect(() => {
     const loadConfig = async () => {
-      if (isTauri()) {
-        try {
-          const content = await readTextFile("session_config.json", { baseDir: BaseDirectory.AppData });
-          const data = JSON.parse(content);
+      fetch("http://localhost:8000/api/config")
+        .then((res) => res.json())
+        .then((data) => {
           if (data && Object.keys(data).length > 0) {
             setFormData((prev) => ({
               ...prev,
@@ -57,33 +53,11 @@ export function ConfigForm({
               data_path: data.data_path || prev.data_path,
             }));
             if (data.data_path) {
-              setPathStatus("idle");
+               setPathStatus("idle");
             }
           }
-        } catch {
-          // Normal on first run if file doesn't exist
-        }
-      } else {
-        // Fetch saved configuration on mount for web
-        fetch("http://localhost:8000/api/config")
-          .then((res) => res.json())
-          .then((data) => {
-            if (data && Object.keys(data).length > 0) {
-              setFormData((prev) => ({
-                ...prev,
-                dob: data.dob || prev.dob,
-                gender: data.gender || prev.gender,
-                height: data.height ? String(data.height) : prev.height,
-                weight: data.weight ? String(data.weight) : prev.weight,
-                data_path: data.data_path || prev.data_path,
-              }));
-              if (data.data_path) {
-                 setPathStatus("idle");
-              }
-            }
-          })
-          .catch((err) => console.error("Could not fetch config:", err));
-      }
+        })
+        .catch((err) => console.error("Could not fetch config:", err));
     };
     loadConfig();
   }, []);
@@ -132,37 +106,21 @@ export function ConfigForm({
     }
     setPathStatus("checking");
 
-    if (isTauri()) {
-      try {
-        const isValid = await exists(pathToCheck.trim());
-        if (isValid) {
-          setPathStatus("valid");
-          setPathError("");
-        } else {
-          setPathStatus("invalid");
-          setPathError("Directory not found on local filesystem.");
-        }
-      } catch {
+    try {
+      const resp = await fetch(
+        `http://localhost:8000/api/check-path?path=${encodeURIComponent(pathToCheck.trim())}`,
+      );
+      const data = await resp.json();
+      if (data.valid) {
+        setPathStatus("valid");
+        setPathError("");
+      } else {
         setPathStatus("invalid");
-        setPathError("Impossibile accedere al direttorio nativamente.");
+        setPathError(data.reason);
       }
-    } else {
-      try {
-        const resp = await fetch(
-          `http://localhost:8000/api/check-path?path=${encodeURIComponent(pathToCheck.trim())}`,
-        );
-        const data = await resp.json();
-        if (data.valid) {
-          setPathStatus("valid");
-          setPathError("");
-        } else {
-          setPathStatus("invalid");
-          setPathError(data.reason);
-        }
-      } catch {
-        setPathStatus("invalid");
-        setPathError("Docker API server unreachable.");
-      }
+    } catch {
+      setPathStatus("invalid");
+      setPathError("API server unreachable. Make sure the backend is running.");
     }
   }, []);
 
@@ -176,24 +134,12 @@ export function ConfigForm({
   const dispatch = useAppDispatch();
 
   const handleClearData = async () => {
-    let isConfirmed = false;
-    if (isTauri()) {
-        const { confirm } = await import("@tauri-apps/plugin-dialog");
-        isConfirmed = await confirm("Are you sure you want to delete all configuration and health data? This cannot be undone.", { title: 'FitStats - Factory Reset', kind: 'warning' });
-    } else {
-        isConfirmed = window.confirm("Are you sure you want to delete all configuration and health data? This cannot be undone.");
-    }
-    
+    const isConfirmed = window.confirm("Are you sure you want to delete all configuration and health data? This cannot be undone.");
     if (!isConfirmed) return;
     
     setLoading(true);
     try {
-      if (isTauri()) {
-        try { await remove("session_config.json", { baseDir: BaseDirectory.AppData }); } catch { /* ignore */ }
-        try { await remove("dashboard_data.json", { baseDir: BaseDirectory.AppData }); } catch { /* ignore */ }
-      } else {
-        await fetch("http://localhost:8000/api/clear", { method: "DELETE" });
-      }
+      await fetch("http://localhost:8000/api/clear", { method: "DELETE" });
       
       setFormData({ dob: "", gender: "", height: "", weight: "", data_path: "./data" });
       setPathStatus("idle");
@@ -236,106 +182,61 @@ export function ConfigForm({
     setLoading(true);
     dispatch(setIsProcessing(true));
 
-    if (isTauri()) {
-      try {
-        const outDir = await appDataDir();
-        
-        // Save to native config
-        try {
-          await mkdir("", { baseDir: BaseDirectory.AppData, recursive: true }).catch(() => {});
-          await writeTextFile("session_config.json", JSON.stringify(formData), { baseDir: BaseDirectory.AppData });
-        } catch (e) {
-          console.warn("Could not save config to appDataDir", e);
-        }
-        
-        const cmd = Command.sidecar("bin/fitstats-engine", [
-          "--dob", formData.dob,
-          "--gender", formData.gender,
-          "--height", String(heightVal),
-          "--weight", String(weightVal),
-          "--data-dir", pathVal,
-          "--out-dir", outDir
-        ]);
-        
-        // Close form instantly and let it run in background closure
+    try {
+      const resp = await fetch(`http://localhost:8000/api/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dob: formData.dob,
+          gender: formData.gender,
+          height: heightVal,
+          weight: weightVal,
+          data_path: pathVal,
+        }),
+      });
+
+      if (!resp.ok) {
+        console.error("Failed to start processing");
+        dispatch(setIsProcessing(false));
+        setLoading(false);
+        alert("Error starting calculation on the server.");
+      } else {
+        // Close form instantly and listen in background
         onSuccess();
         
-        cmd.execute().then(output => {
-           dispatch(setIsProcessing(false));
-           if (output.code === 0) {
-             dispatch(fetchHealthData());
-           } else {
-             console.error("Sidecar execution failed:", output.stderr);
-             alert("Error executing ETL: " + output.stderr);
-           }
-        }).catch(err => {
-           dispatch(setIsProcessing(false));
-           console.error("Tauri sidecar invocation exception:", err);
-           alert("Failed to spawn background engine.");
-        });
-
-      } catch (err) {
-        dispatch(setIsProcessing(false));
-        setLoading(false);
-        console.error("Tauri sidecar invocation exception:", err);
-      }
-    } else {
-      try {
-        const resp = await fetch(`http://localhost:8000/api/start`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            dob: formData.dob,
-            gender: formData.gender,
-            height: heightVal,
-            weight: weightVal,
-            data_path: pathVal,
-          }),
-        });
-
-        if (!resp.ok) {
-          console.error("Failed to start processing");
-          dispatch(setIsProcessing(false));
-          setLoading(false);
-          alert("Error starting calculation on the server.");
-        } else {
-          // Close form instantly and listen in background
-          onSuccess();
-          
-          const ws = new WebSocket("ws://localhost:8000/ws/status");
-          
-          ws.onmessage = (event) => {
-            try {
-              const data = JSON.parse(event.data);
-              if (data.event === "etl_progress") {
-                dispatch(setEtlProgress({ progress: data.progress, step: data.step }));
-              } else if (data.event === "etl_finished") {
-                dispatch(setIsProcessing(false));
-                ws.close();
-                if (data.status === "success") {
-                  dispatch(fetchHealthData());
-                } else {
-                  alert("Error during ETL: " + data.message);
-                }
+        const ws = new WebSocket("ws://localhost:8000/ws/status");
+        
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.event === "etl_progress") {
+              dispatch(setEtlProgress({ progress: data.progress, step: data.step }));
+            } else if (data.event === "etl_finished") {
+              dispatch(setIsProcessing(false));
+              ws.close();
+              if (data.status === "success") {
+                dispatch(fetchHealthData());
+              } else {
+                alert("Error during ETL: " + data.message);
               }
-            } catch (e) {
-              console.error("Error parsing WS message:", e);
             }
-          };
-          
-          ws.onerror = (error) => {
-             console.error("WebSocket error:", error);
-             dispatch(setIsProcessing(false));
-             ws.close();
-             alert("WebSocket disconnected unexpectedly.");
-          };
-        }
-      } catch (err) {
-        console.error(err);
-        dispatch(setIsProcessing(false));
-        setLoading(false);
-        alert("Failed to connect to the local server.");
+          } catch (e) {
+            console.error("Error parsing WS message:", e);
+          }
+        };
+        
+        ws.onerror = (error) => {
+           console.error("WebSocket error:", error);
+           dispatch(setIsProcessing(false));
+           ws.close();
+           alert("WebSocket disconnected unexpectedly.");
+        };
       }
+    } catch (err) {
+      console.error(err);
+      dispatch(setIsProcessing(false));
+      setLoading(false);
+      alert("Failed to connect to the local server.");
     }
   };
 

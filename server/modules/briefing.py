@@ -3,10 +3,12 @@ import os
 import json
 from datetime import datetime
 
+import config
+
 # ==========================================
 # CONFIGURATION
 # ==========================================
-DATA_FILE = "fitbit_analysis.csv"
+DATA_FILE = os.path.join(config.CLIENT_PUBLIC_DIR, "fitbit_analysis.csv")
 
 def get_status_emoji(value, mean, std, metric_type='lower_is_better'):
     """
@@ -53,9 +55,10 @@ def load_data():
 def load_metrics(target_date=None):
     """ Loads user metrics from session_config.json and calculates age relative to target_date. """
     metrics = {"age": "N/A", "gender": "N/A", "height": "N/A"}
-    if os.path.exists("session_config.json"):
+    config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
+    if os.path.exists(config_path):
         try:
-            with open("session_config.json", "r") as f:
+            with open(config_path, "r") as f:
                 sc = json.load(f)
                 dob = sc.get("dob")
                 if dob and target_date:

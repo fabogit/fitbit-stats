@@ -1,3 +1,5 @@
+use tauri_plugin_shell::ShellExt;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -12,6 +14,12 @@ pub fn run() {
             .build(),
         )?;
       }
+      
+      let sidecar = app.shell().sidecar("fitstats-server").expect("failed to construct server sidecar");
+      let (mut _rx, _child) = sidecar.spawn().expect("failed to spawn server sidecar");
+      
+      // Let it run in background. child process handle guarantees it's tracked by the OS/Tauri.
+      
       Ok(())
     })
     .run(tauri::generate_context!())

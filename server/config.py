@@ -14,5 +14,18 @@ USER_DOB = os.environ.get("USER_DOB", "")
 USER_GENDER = os.environ.get("USER_GENDER", "")
 
 # Output paths
-CLIENT_PUBLIC_DIR = os.environ.get(
-    "CLIENT_PUBLIC_DIR", os.path.join("..", "client", "public"))
+import sys
+import platform
+
+if getattr(sys, 'frozen', False):
+    import platform
+    home = os.path.expanduser("~")
+    if platform.system() == "Windows":
+        CLIENT_PUBLIC_DIR = os.path.join(os.environ.get("APPDATA", home), "com.fitstats")
+    elif platform.system() == "Darwin":
+        CLIENT_PUBLIC_DIR = os.path.join(home, "Library", "Application Support", "com.fitstats")
+    else:
+        CLIENT_PUBLIC_DIR = os.path.join(home, ".local", "share", "com.fitstats")
+    os.makedirs(CLIENT_PUBLIC_DIR, exist_ok=True)
+else:
+    CLIENT_PUBLIC_DIR = os.environ.get("CLIENT_PUBLIC_DIR", os.path.join("..", "client", "public"))
