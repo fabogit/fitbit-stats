@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SERVER_URL } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,7 @@ export function BriefView({ onAction }: { onAction?: () => void }) {
     setBriefData(null);
     setError(null);
     try {
-      const resp = await fetch("http://localhost:8000/api/brief", {
+      const resp = await fetch(`${SERVER_URL.API}/api/brief`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date }),
