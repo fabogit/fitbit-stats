@@ -14,6 +14,7 @@ import {
 import { CheckCircle2, AlertCircle, Search, Loader2, Trash2 } from "lucide-react";
 import { useAppDispatch } from "../../store/store";
 import { fetchHealthData, setIsProcessing, setEtlProgress } from "../../features/dashboard/dashboardSlice";
+import { SERVER_URL } from "@/lib/api";
 
 interface ConfigFormProps {
   onSuccess: () => void;
@@ -40,7 +41,7 @@ export function ConfigForm({
 
   useEffect(() => {
     const loadConfig = async () => {
-      fetch("http://localhost:8000/api/config")
+      fetch(`${SERVER_URL.API}/api/config`)
         .then((res) => res.json())
         .then((data) => {
           if (data && Object.keys(data).length > 0) {
@@ -108,7 +109,7 @@ export function ConfigForm({
 
     try {
       const resp = await fetch(
-        `http://localhost:8000/api/check-path?path=${encodeURIComponent(pathToCheck.trim())}`,
+        `${SERVER_URL.API}/api/check-path?path=${encodeURIComponent(pathToCheck.trim())}`,
       );
       const data = await resp.json();
       if (data.valid) {
@@ -139,7 +140,7 @@ export function ConfigForm({
     
     setLoading(true);
     try {
-      await fetch("http://localhost:8000/api/clear", { method: "DELETE" });
+      await fetch(`${SERVER_URL.API}/api/clear`, { method: "DELETE" });
       
       setFormData({ dob: "", gender: "", height: "", weight: "", data_path: "./data" });
       setPathStatus("idle");
@@ -183,7 +184,7 @@ export function ConfigForm({
     dispatch(setIsProcessing(true));
 
     try {
-      const resp = await fetch(`http://localhost:8000/api/start`, {
+      const resp = await fetch(`${SERVER_URL.API}/api/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -204,7 +205,7 @@ export function ConfigForm({
         // Close form instantly and listen in background
         onSuccess();
         
-        const ws = new WebSocket("ws://localhost:8000/ws/status");
+        const ws = new WebSocket(`${SERVER_URL.WS}/ws/status`);
         
         ws.onmessage = (event) => {
           try {
