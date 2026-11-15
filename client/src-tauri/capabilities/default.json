@@ -11,7 +11,6 @@
     {
       "identifier": "shell:allow-execute",
       "allow": [
-        { "name": "bin/fitstats-engine", "args": true, "sidecar": true },
         { "name": "bin/fitstats-server", "args": true, "sidecar": true }
       ]
     },
