@@ -80,8 +80,10 @@ export const getRecoveryScoreSeries = (data: HealthRecord[]): number[] => {
  */
 export const getRestorativeSleepSeries = (data: HealthRecord[]): number[] => {
   return data.map(record => {
-    const total = record.sleep_deep + record.sleep_light + record.sleep_rem + record.sleep_awake;
-    const restorative = record.sleep_deep + record.sleep_rem;
+    const { sleep_deep, sleep_light, sleep_rem, sleep_awake } = record;
+    if (sleep_deep === null || sleep_light === null || sleep_rem === null || sleep_awake === null) return null;
+    const total = sleep_deep + sleep_light + sleep_rem + sleep_awake;
+    const restorative = sleep_deep + sleep_rem;
     if (total <= 0) return null;
     return (restorative / total) * 100;
   }).filter((v): v is number => v !== null);
