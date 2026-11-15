@@ -106,6 +106,8 @@ npm run dev
 
 📸 Screenshots:
 
+> The screenshot and the plots in this README are generated from synthetic sample data.
+
 ![Dashboard Preview](dashboard.webp)
 
 ### Step 3: Static Plots (Optional)
