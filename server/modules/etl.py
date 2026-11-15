@@ -206,11 +206,11 @@ def merge_all_data(progress_callback=None):
 
     master_df = filter_by_date(master_df)
 
-    # Fill NaNs for activity and sleep metrics (logical 0)
+    # Fill NaNs for activity and sleep metrics (logical 0). The zone_* columns
+    # are left out on purpose: a day without zone data must stay empty, not 0.
     cols_zero = [
         'very_active_minutes', 'moderately_active_minutes', 'lightly_active_minutes', 'sedentary_minutes',
         'calories_total', 'sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake',
-        'zone_out_of_range', 'zone_fat_burn', 'zone_cardio', 'zone_peak', 'zone_light',
         'steps', 'distance', 'exercise_duration', 'exercise_calories', 'exercise_count'
     ]
     for c in cols_zero:
