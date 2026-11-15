@@ -61,6 +61,19 @@ _(Note: The app remembers your biometrics and folder path securely inside your O
 
 ---
 
+## 🧪 Sample Data
+
+No Fitbit export at hand? A small script generates a deterministic, fully synthetic export (about 60 days, invented values) in the same folder layout and file formats the app reads. It uses only the Python standard library:
+
+```bash
+python scripts/generate_sample_export.py /path/to/sample-export
+# optional: --days 60 --start 2024-01-01 --seed 42
+```
+
+The output folder is required and nothing is written inside the repository unless you point it there. Then, in the onboarding form (desktop app or Docker web UI), enter any biometrics and select the generated folder as the data path (for Docker, mount it as the `data` volume). The generated data is not committed: regenerate it whenever you need it.
+
+---
+
 ## 🐳 Docker Deployment
 
 For users who prefer a web-based interface or home lab deployment, a full Docker stack is provided.
