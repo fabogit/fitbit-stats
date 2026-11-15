@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAppDispatch, useAppSelector } from "./store/store";
 import { fetchHealthData } from "./features/dashboard/dashboardSlice";
-import { SERVER_URL } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { Sidebar } from "./components/dashboard/Sidebar";
 import { OverviewView } from "./components/dashboard/views/OverviewView";
 import { TimelineView } from "./components/dashboard/views/TimelineView";
@@ -43,7 +43,7 @@ function App() {
             setIsFirstRun(true);
           }
         } else {
-          const resp = await fetch(`${SERVER_URL.API}/api/config`);
+          const resp = await apiFetch("/api/config");
           const configData = await resp.json();
           
           if (!configData || !configData.dob) {

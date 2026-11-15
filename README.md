@@ -95,6 +95,12 @@ For users who prefer a web-based interface or home lab deployment, a full Docker
 - **API Server (port 8000):** The Python/FastAPI engine handling calculations.
 - **Engine Watcher:** A background service, always started by `docker-compose.yml`, that automatically triggers a re-calculate when files in the `data/` directory are modified.
 
+### Access to the API
+
+The API only accepts browser requests from an explicit list of allowed origins: the desktop app, the Vite development server, and the web origins listed in the `FITSTATS_ALLOWED_ORIGINS` environment variable (comma-separated, set for the `api-server` service in `docker-compose.yml`). The default value covers the frontend on port 8080 at `localhost` and `127.0.0.1`. If you open the web UI from a different address or port (for example another host name), add that origin to the variable.
+
+The desktop app additionally protects the API with a token generated at every launch. The Docker stack has no desktop shell to issue one, so it does not use a token (the server notes this once in its log at startup). Keep the API port (8000) reachable only from machines you trust.
+
 ---
 
 ## 🛠️ Developer Setup

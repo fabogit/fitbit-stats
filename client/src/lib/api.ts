@@ -1,3 +1,5 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
+
 /**
  * Centralized API base URL.
  *
@@ -11,6 +13,40 @@ export const SERVER_URL = {
   WS: "ws://127.0.0.1:8000",
 };
 
+let tokenPromise: Promise<string | null> | null = null;
+
+/**
+ * Per-launch API token issued by the desktop shell. The web build has none
+ * (null) and sends no token. Cached after the first successful read.
+ */
+function getApiToken(): Promise<string | null> {
+  if (!isTauri()) return Promise.resolve(null);
+  if (!tokenPromise) {
+    tokenPromise = invoke<string>("get_api_token").catch((e) => {
+      tokenPromise = null;
+      throw e;
+    });
+  }
+  return tokenPromise;
+}
+
+/** Single entry point for API requests: adds the token when there is one. */
+export async function apiFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const token = await getApiToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(`${SERVER_URL.API}${path}`, { ...init, headers });
+}
+
+/** Opens the status WebSocket, passing the token (if any) as a subprotocol. */
+export async function openStatusSocket(): Promise<WebSocket> {
+  const token = await getApiToken();
+  const url = `${SERVER_URL.WS}/ws/status`;
+  return token ? new WebSocket(url, ["fitstats", `token.${token}`]) : new WebSocket(url);
+}
 
 /**
  * Wait until the local API answers `/api/health`.
@@ -30,7 +66,7 @@ export async function waitForServer(
     const attempt = new AbortController();
     const timer = setTimeout(() => attempt.abort(), 2_000);
     try {
-      const resp = await fetch(`${SERVER_URL.API}/api/health`, {
+      const resp = await apiFetch("/api/health", {
         signal: attempt.signal,
       });
       if (resp.ok) return true;

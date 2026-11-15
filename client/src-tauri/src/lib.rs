@@ -3,6 +3,21 @@ use std::time::Duration;
 use tauri::{Manager, RunEvent};
 use tauri_plugin_shell::{process::CommandChild, ShellExt};
 
+/// Per-launch API token, shared with the sidecar and the frontend.
+struct ApiToken(String);
+
+/// 256 random bits from the OS generator, hex encoded.
+fn generate_token() -> String {
+  let mut bytes = [0u8; 32];
+  getrandom::fill(&mut bytes).expect("failed to read OS random generator");
+  bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+#[tauri::command]
+fn get_api_token(token: tauri::State<'_, ApiToken>) -> String {
+  token.0.clone()
+}
+
 /// Handle of the Python sidecar, kept so it can be stopped on exit.
 struct Sidecar(Mutex<Option<CommandChild>>);
 
@@ -41,6 +56,7 @@ fn stop_sidecar(child: CommandChild) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .invoke_handler(tauri::generate_handler![get_api_token])
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_shell::init())
@@ -53,7 +69,14 @@ pub fn run() {
         )?;
       }
       
-      let sidecar = app.shell().sidecar("fitstats-server").expect("failed to construct server sidecar");
+      // Passed by environment, not argument: arguments show up in process lists.
+      let token = generate_token();
+      let sidecar = app
+        .shell()
+        .sidecar("fitstats-server")
+        .expect("failed to construct server sidecar")
+        .env("FITSTATS_API_TOKEN", &token);
+      app.manage(ApiToken(token));
       let (_rx, child) = sidecar.spawn().expect("failed to spawn server sidecar");
       app.manage(Sidecar(Mutex::new(Some(child))));
 

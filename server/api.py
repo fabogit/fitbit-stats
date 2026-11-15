@@ -1,28 +1,133 @@
+import hmac
+import logging
 import multiprocessing
 import os
 import json
 import asyncio
+from contextlib import asynccontextmanager
 from typing import List
 
 import uvicorn
 from pydantic import BaseModel, Field, validator
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from modules.briefing import get_daily_brief
 
 # Change working directory so relative paths in config.py work correctly
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-app = FastAPI(title="FitStats Config API")
+TOKEN_ENV = "FITSTATS_API_TOKEN"
+ORIGINS_ENV = "FITSTATS_ALLOWED_ORIGINS"
+WS_PROTOCOL = "fitstats"
+WS_TOKEN_PREFIX = "token."
+OPEN_PATHS = {"/api/health"}
 
-# Allow CORS for local development (React runs on 8080/5173, etc)
+# Origins of the application itself: desktop webview and Vite dev server.
+APP_ORIGINS = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+logger = logging.getLogger("uvicorn.error")
+
+
+def build_allowed_origins(extra: str = "") -> List[str]:
+    """App origins plus the comma-separated extra web origins (never '*')."""
+    origins = list(APP_ORIGINS)
+    for origin in (extra or "").split(","):
+        origin = origin.strip()
+        if origin and origin != "*" and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+# Computed once; shared by the CORS middleware and the WebSocket origin check.
+ALLOWED_ORIGINS = build_allowed_origins(os.environ.get(ORIGINS_ENV, ""))
+
+
+def expected_token() -> str:
+    return os.environ.get(TOKEN_ENV, "")
+
+
+def token_matches(candidate: str, expected: str) -> bool:
+    return hmac.compare_digest(candidate.encode(), expected.encode())
+
+
+def _header(scope, name: bytes) -> str:
+    for key, value in scope.get("headers", []):
+        if key == name:
+            return value.decode("latin-1")
+    return ""
+
+
+def request_token(scope) -> str:
+    """Token offered by the caller: Authorization header, or WebSocket subprotocol."""
+    if scope["type"] == "websocket":
+        for proto in _header(scope, b"sec-websocket-protocol").split(","):
+            proto = proto.strip()
+            if proto.startswith(WS_TOKEN_PREFIX):
+                return proto[len(WS_TOKEN_PREFIX):]
+        return ""
+    scheme, _, value = _header(scope, b"authorization").partition(" ")
+    return value.strip() if scheme.lower() == "bearer" else ""
+
+
+class TokenMiddleware:
+    """Checks the WebSocket origin and, when FITSTATS_API_TOKEN is set, the token."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            # Browsers do not apply CORS to WebSockets, so check the origin here.
+            # A missing Origin (non-browser client) is left to the token check.
+            origin = _header(scope, b"origin")
+            if origin and origin not in ALLOWED_ORIGINS:
+                return await self._reject_websocket(receive, send)
+        expected = expected_token()
+        # Preflight requests carry no credentials by design; CORS answers them.
+        is_preflight = scope["type"] == "http" and scope["method"] == "OPTIONS"
+        if (scope["type"] not in ("http", "websocket") or not expected
+                or is_preflight or scope["path"] in OPEN_PATHS):
+            return await self.app(scope, receive, send)
+        if token_matches(request_token(scope), expected):
+            return await self.app(scope, receive, send)
+        if scope["type"] == "websocket":
+            return await self._reject_websocket(receive, send)
+        response = JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        await response(scope, receive, send)
+
+    @staticmethod
+    async def _reject_websocket(receive, send):
+        await receive()  # websocket.connect
+        await send({"type": "websocket.close", "code": 1008})
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    if expected_token():
+        logger.info("API access token required (per-launch token is set).")
+    else:
+        logger.info("No API access token configured: requests are not token-protected.")
+    yield
+
+
+app = FastAPI(title="FitStats Config API", lifespan=lifespan)
+
+# Order matters: CORS is added last so it wraps the token check and also
+# decorates the 401 responses for the app's own origins.
+app.add_middleware(TokenMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -71,8 +176,8 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, subprotocol: str = None):
+        await websocket.accept(subprotocol=subprotocol)
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
@@ -181,7 +286,8 @@ async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
 @app.websocket("/ws/status")
 async def websocket_status(websocket: WebSocket):
     """Persistent channel to notify the client of the ETL status."""
-    await manager.connect(websocket)
+    offered = websocket.scope.get("subprotocols", [])
+    await manager.connect(websocket, WS_PROTOCOL if WS_PROTOCOL in offered else None)
     try:
         while True:
             # Wait passively (keep-alive)
