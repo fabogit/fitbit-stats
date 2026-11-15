@@ -183,7 +183,43 @@ export function ConfigForm({
     setLoading(true);
     dispatch(setIsProcessing(true));
 
+    let ws: WebSocket | null = null;
     try {
+      // Open the status channel first: events broadcast before a client is
+      // connected are lost, so the ETL must not start until the socket is open.
+      const socket = new WebSocket(`${SERVER_URL.WS}/ws/status`);
+      ws = socket;
+      await new Promise<void>((resolve, reject) => {
+        socket.onopen = () => resolve();
+        socket.onerror = () => reject(new Error("WebSocket connection failed"));
+      });
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.event === "etl_progress") {
+            dispatch(setEtlProgress({ progress: data.progress, step: data.step }));
+          } else if (data.event === "etl_finished") {
+            dispatch(setIsProcessing(false));
+            socket.close();
+            if (data.status === "success") {
+              dispatch(fetchHealthData({ force: true }));
+            } else {
+              alert("Error during ETL: " + data.message);
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing WS message:", e);
+        }
+      };
+
+      socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        dispatch(setIsProcessing(false));
+        socket.close();
+        alert("WebSocket disconnected unexpectedly.");
+      };
+
       const resp = await fetch(`${SERVER_URL.API}/api/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -198,43 +234,21 @@ export function ConfigForm({
 
       if (!resp.ok) {
         console.error("Failed to start processing");
+        socket.onerror = null;
+        socket.close();
         dispatch(setIsProcessing(false));
         setLoading(false);
         alert("Error starting calculation on the server.");
       } else {
-        // Close form instantly and listen in background
+        // Close form instantly; the already-open socket keeps listening
         onSuccess();
-        
-        const ws = new WebSocket(`${SERVER_URL.WS}/ws/status`);
-        
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.event === "etl_progress") {
-              dispatch(setEtlProgress({ progress: data.progress, step: data.step }));
-            } else if (data.event === "etl_finished") {
-              dispatch(setIsProcessing(false));
-              ws.close();
-              if (data.status === "success") {
-                dispatch(fetchHealthData({ force: true }));
-              } else {
-                alert("Error during ETL: " + data.message);
-              }
-            }
-          } catch (e) {
-            console.error("Error parsing WS message:", e);
-          }
-        };
-        
-        ws.onerror = (error) => {
-           console.error("WebSocket error:", error);
-           dispatch(setIsProcessing(false));
-           ws.close();
-           alert("WebSocket disconnected unexpectedly.");
-        };
       }
     } catch (err) {
       console.error(err);
+      if (ws) {
+        ws.onerror = null;
+        ws.close();
+      }
       dispatch(setIsProcessing(false));
       setLoading(false);
       alert("Failed to connect to the local server.");
@@ -379,8 +393,9 @@ export function ConfigForm({
           </p>
         )}
         <p className="text-[11px] text-muted-foreground/60 leading-tight mt-2">
-          Enter the absolute or relative path to your Fitbit export folder.
-          Usually contains files like <code>heart_rate-YYYY-MM-DD.json</code>.
+          Enter the absolute or relative path to your Fitbit export folder: the
+          one that contains the <code>Global Export Data</code> folder (not the
+          folder with the <code>heart_rate-*.json</code> files itself).
         </p>
       </div>
 

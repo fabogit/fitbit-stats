@@ -33,9 +33,12 @@ class ConfigPayload(BaseModel):
     data_path: str
 
 
+EXPORT_FOLDER = "Global Export Data"
+
+
 @app.get("/api/check-path")
 async def check_path(path: str):
-    """Checks if the data path exists and contains heart rate data."""
+    """Checks that the path is an export root: it must contain the 'Global Export Data' folder with JSON files."""
     # Resolve relative paths from the current working directory ('server' folder)
     target_path = path
     if not os.path.isabs(path):
@@ -44,6 +47,21 @@ async def check_path(path: str):
 
     if not os.path.exists(target_path):
         return {"valid": False, "reason": f"Path '{target_path}' does not exist"}
+
+    if not os.path.isdir(target_path):
+        return {"valid": False, "reason": f"Path '{target_path}' is not a folder"}
+
+    export_dir = os.path.join(target_path, EXPORT_FOLDER)
+    if not os.path.isdir(export_dir):
+        if os.path.basename(os.path.normpath(target_path)) == EXPORT_FOLDER:
+            reason = (f"This is the '{EXPORT_FOLDER}' folder itself. "
+                      "Select its parent folder instead.")
+        else:
+            reason = f"Folder '{EXPORT_FOLDER}' not found in '{target_path}'"
+        return {"valid": False, "reason": reason}
+
+    if not any(name.endswith(".json") for name in os.listdir(export_dir)):
+        return {"valid": False, "reason": f"Folder '{EXPORT_FOLDER}' contains no JSON data files"}
 
     return {"valid": True, "path": target_path}
 
