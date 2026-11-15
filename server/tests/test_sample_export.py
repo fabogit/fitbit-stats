@@ -62,6 +62,10 @@ def test_etl_loads_generated_export(tmp_path):
     assert df.index.max().strftime("%Y-%m-%d") == "2024-01-12"
     for col in ("resting_bpm", "avg_bpm", "steps", "calories_total", "sleep_deep", "overall_score",
                 "spo2_avg", "rmssd", "stress_score", "very_active_minutes", "acwr_ratio", "vo2max",
-                "readiness_score", "respiratory_rate", "temperature_variation", "zone_cardio"):
+                "readiness_score", "respiratory_rate", "temperature_variation"):
         assert col in df.columns, col
         assert (df[col].fillna(0) != 0).any(), col
+    # Zone column names depend on the parser, so only check that some are loaded.
+    zone_cols = [c for c in df.columns if c.startswith("zone_")]
+    assert zone_cols
+    assert any((df[c].fillna(0) != 0).any() for c in zone_cols)

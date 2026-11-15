@@ -35,6 +35,10 @@ def iso_z(d, hh=0, mm=0):
     return f"{d.isoformat()}T{hh:02d}:{mm:02d}:00Z"
 
 
+def iso_naive(d, hh=0, mm=0):
+    return f"{d.isoformat()}T{hh:02d}:{mm:02d}:00"
+
+
 def write_json(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, indent=1, sort_keys=True), encoding="utf-8")
@@ -102,7 +106,7 @@ def gen_daily_json_series(out, rng, models, prefix, value_fn, slots=96, fmt=str)
             for s, v in enumerate(parts):
                 minutes = s * (1440 // slots)
                 rows.append({"dateTime": mdy_time(d, minutes // 60, minutes % 60), "value": fmt(v)})
-        write_json(folder / f"{prefix}-{block[0]["date"].isoformat()}.json", rows)
+        write_json(folder / f"{prefix}-{block[0]['date'].isoformat()}.json", rows)
 
 
 def gen_global_export(out, rng, models):
@@ -150,7 +154,7 @@ def gen_global_export(out, rng, models):
     minutes_files("sedentary_minutes", lambda m: max(400, 780 - 80 * m["active"] + rng.gauss(0, 30)))
 
     # Exercise sessions
-    for block in chunks(models):
+    for n, block in enumerate(chunks(models)):
         rows = []
         for m in block:
             if not m["workout"]:
@@ -164,7 +168,7 @@ def gen_global_export(out, rng, models):
                 "calories": int(minutes * rng.uniform(7, 11)),
                 "averageHeartRate": int(rng.uniform(120, 155)),
             })
-        write_json(folder / f"exercise-{block[0]['date'].isoformat()}.json", rows)
+        write_json(folder / f"exercise-{n * 100}.json", rows)
 
     # Weight (pounds in the export; the parser converts to kg) - one weigh-in a week
     rows_all = []
@@ -217,7 +221,7 @@ def gen_sleep_and_vitals(out, rng, models):
         ["sleep_log_entry_id", "timestamp", "overall_score", "composition_score", "revitalization_score",
          "duration_score", "deep_sleep_in_minutes", "resting_heart_rate", "restlessness"],
         [[10**10 + i, iso_z(m["date"], 7, 0), int(max(55, min(95, 80 + 6 * m["wave"] + rng.gauss(0, 4)))),
-          int(rng.uniform(18, 25)), int(rng.uniform(65, 90)), int(rng.uniform(70, 100)),
+          "", int(rng.uniform(65, 90)), "",
           int(m["sleep_total"] * rng.uniform(0.12, 0.2)), m["resting"], round(rng.uniform(0.08, 0.18), 4)]
          for i, m in enumerate(models)])
 
@@ -231,23 +235,24 @@ def gen_sleep_and_vitals(out, rng, models):
         write_csv(
             out / "Heart Rate Variability" / f"Daily Heart Rate Variability Summary - {first.strftime('%Y-%m')}-({first.day:02d}).csv",
             ["timestamp", "rmssd", "nremhr", "entropy"],
-            [[iso_z(m["date"]), round(42 + 6 * m["wave"] + rng.gauss(0, 4), 3),
+            [[iso_naive(m["date"]), round(42 + 6 * m["wave"] + rng.gauss(0, 4), 3),
               round(m["resting"] + 1.5, 3), round(rng.uniform(2.3, 2.9), 3)] for m in block])
 
     write_csv(
         out / "Stress Score" / "Stress Score.csv",
         ["DATE", "UPDATED_AT", "STRESS_SCORE", "SLEEP_POINTS", "MAX_SLEEP_POINTS", "RESPONSIVENESS_POINTS",
          "MAX_RESPONSIVENESS_POINTS", "EXERTION_POINTS", "MAX_EXERTION_POINTS", "STATUS", "CALCULATION_FAILED"],
-        [[m["date"].isoformat(), iso_z(m["date"], 23, 0), int(max(35, min(90, 68 + 8 * m["wave"] + rng.gauss(0, 5)))),
-          int(rng.uniform(20, 30)), 30, int(rng.uniform(18, 28)), 30, int(rng.uniform(10, 25)), 40, "READY", "false"]
+        [[iso_naive(m["date"]), iso_naive(m["date"], 23, 0) + ".000", int(max(35, min(90, 68 + 8 * m["wave"] + rng.gauss(0, 5)))),
+          int(rng.uniform(20, 30)), 30, int(rng.uniform(18, 28)), 30, int(rng.uniform(10, 25)), 40, "READY_NOT_PREMIUM", "false"]
          for m in models])
 
 
 def gen_google_data(out, rng, models):
     folder = out / "Physical Activity_GoogleData"
-    src = "Synthetic"
+    src = "Fitbit App"
     write_csv(folder / "cardio_acute_chronic_workload_ratio.csv", ["timestamp", "ratio", "label", "data source"],
-              [[iso_z(m["date"]), round(max(0.5, 1.0 + 0.2 * m["wave"] + rng.gauss(0, 0.08)), 3), "OPTIMAL", src]
+              [[m["date"].isoformat(), round(max(0.5, 1.0 + 0.2 * m["wave"] + rng.gauss(0, 0.08)), 3),
+                "OPTIMAL_TRAINING", src]
                for m in models])
     vo2 = 42.0
     vo2_rows = []
@@ -258,8 +263,9 @@ def gen_google_data(out, rng, models):
     write_csv(folder / "daily_readiness.csv",
               ["timestamp", "score", "type", "sleep readiness", "heart rate variability readiness",
                "resting heart rate readiness", "data source"],
-              [[iso_z(m["date"]), int(max(30, min(98, 72 + 10 * m["wave"] + rng.gauss(0, 6)))), "READY",
-                "MEDIUM", "HIGH", "MEDIUM", src] for m in models])
+              [[m["date"].isoformat(), int(max(30, min(98, 72 + 10 * m["wave"] + rng.gauss(0, 6)))),
+                rng.choice(["HIGH", "MEDIUM", "LOW"]), "VERY_HIGH", rng.choice(["MEDIUM", "HIGH", "LOW"]),
+                rng.choice(["HIGH", "LOW", "VERY_HIGH"]), src] for m in models])
     write_csv(folder / "daily_respiratory_rate.csv", ["timestamp", "breaths per minute", "data source"],
               [[iso_z(m["date"]), round(rng.uniform(13.5, 16.5), 1), src] for m in models])
     write_csv(folder / "daily_sleep_temperature_derivations.csv",
@@ -275,8 +281,9 @@ def gen_google_data(out, rng, models):
         rows = []
         for m in block:
             d = m["date"]
-            plan = [("OUT_OF_RANGE", int(rng.uniform(40, 80))), ("FAT_BURN", int(rng.uniform(20, 60))),
-                    ("CARDIO", int(rng.uniform(5, 25))), ("PEAK", int(rng.uniform(0, 8)) if m["workout"] else 0)]
+            plan = [("OUT_OF_RANGE", int(rng.uniform(40, 80))), ("LIGHT", int(rng.uniform(20, 60))),
+                    ("MODERATE", int(rng.uniform(5, 25))),
+                    ("VIGOROUS", int(rng.uniform(1, 8)) if m["workout"] else 0)]
             minute = 7 * 60
             for zone, count in plan:
                 for _ in range(count):
