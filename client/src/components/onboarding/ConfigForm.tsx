@@ -14,7 +14,7 @@ import {
 import { CheckCircle2, AlertCircle, Search, Loader2, Trash2 } from "lucide-react";
 import { useAppDispatch } from "../../store/store";
 import { fetchHealthData, setIsProcessing, setEtlProgress } from "../../features/dashboard/dashboardSlice";
-import { SERVER_URL } from "@/lib/api";
+import { SERVER_URL, waitForServer } from "@/lib/api";
 
 interface ConfigFormProps {
   onSuccess: () => void;
@@ -38,8 +38,23 @@ export function ConfigForm({
     "idle" | "checking" | "valid" | "invalid"
   >("idle");
   const [pathError, setPathError] = useState("");
+  const [serverState, setServerState] = useState<
+    "starting" | "ready" | "failed"
+  >("starting");
+  const [serverAttempt, setServerAttempt] = useState(0);
+
+  // Wait for the local server before talking to it: a cold start takes seconds.
+  useEffect(() => {
+    const controller = new AbortController();
+    setServerState("starting");
+    waitForServer(controller.signal).then((ok) => {
+      if (!controller.signal.aborted) setServerState(ok ? "ready" : "failed");
+    });
+    return () => controller.abort();
+  }, [serverAttempt]);
 
   useEffect(() => {
+    if (serverState !== "ready") return;
     const loadConfig = async () => {
       fetch(`${SERVER_URL.API}/api/config`)
         .then((res) => res.json())
@@ -61,7 +76,7 @@ export function ConfigForm({
         .catch((err) => console.error("Could not fetch config:", err));
     };
     loadConfig();
-  }, []);
+  }, [serverState]);
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -126,11 +141,12 @@ export function ConfigForm({
   }, []);
 
   useEffect(() => {
+    if (serverState !== "ready") return;
     const timer = setTimeout(() => {
       checkPath(formData.data_path);
     }, 500);
     return () => clearTimeout(timer);
-  }, [formData.data_path, checkPath]);
+  }, [formData.data_path, checkPath, serverState]);
 
   const dispatch = useAppDispatch();
 
@@ -387,6 +403,24 @@ export function ConfigForm({
             )}
           </div>
         </div>
+        {serverState === "starting" && (
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Starting local server...
+          </p>
+        )}
+        {serverState === "failed" && (
+          <p className="text-xs text-red-500 mt-1">
+            The local server did not start.{" "}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => setServerAttempt((n) => n + 1)}
+            >
+              Retry
+            </button>
+          </p>
+        )}
         {pathStatus === "invalid" && (
           <p className="text-xs text-red-500 mt-1 animate-in fade-in slide-in-from-top-1">
             {pathError}
