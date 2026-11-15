@@ -206,11 +206,12 @@ def merge_all_data(progress_callback=None):
 
     master_df = filter_by_date(master_df)
 
-    # Fill NaNs for activity and sleep metrics (logical 0). The zone_* columns
-    # are left out on purpose: a day without zone data must stay empty, not 0.
+    # Fill NaNs for activity metrics (logical 0). The zone_* and sleep_* columns
+    # are left out on purpose: a day without zone or sleep data must stay empty,
+    # not 0 (a 0-minute night would drag the 7-day sleep mean down).
     cols_zero = [
         'very_active_minutes', 'moderately_active_minutes', 'lightly_active_minutes', 'sedentary_minutes',
-        'calories_total', 'sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake',
+        'calories_total',
         'steps', 'distance', 'exercise_duration', 'exercise_calories', 'exercise_count'
     ]
     for c in cols_zero:
@@ -246,11 +247,3 @@ def export_to_json(df):
 
     export_df.to_json(output_path, orient='records')
     print(f"-> Dashboard JSON exported to: {output_path}")
-
-    # ALSO: If a 'dist' folder exists (production build), update it too!
-    # This ensures that even after a build, the dashboard remains fresh.
-    dist_dir = config.CLIENT_PUBLIC_DIR.replace("public", "dist")
-    if os.path.exists(dist_dir):
-        dist_path = os.path.join(dist_dir, "dashboard_data.json")
-        export_df.to_json(dist_path, orient='records')
-        print(f"-> Syncing to production build: {dist_path}")

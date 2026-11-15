@@ -361,11 +361,11 @@ async def run_brief(payload: dict = None):
     date = payload.get("date") if payload else None
     try:
         brief = get_daily_brief(date)
-        if "error" in brief:
-            raise HTTPException(status_code=404, detail=brief["error"])
-        return brief
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    if "error" in brief:
+        raise HTTPException(status_code=404, detail=brief["error"])
+    return brief
 
 
 @app.get("/api/health")
