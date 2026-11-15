@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ export function ConfigForm({
   onSuccess,
   submitLabel = "Start Calculation",
 }: ConfigFormProps) {
+  const selectOnClick = useRef(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     dob: "",
@@ -396,6 +397,16 @@ export function ConfigForm({
             placeholder="./data"
             value={formData.data_path}
             onFocus={(e) => e.target.select()}
+            // The desktop WebView clears the selection on the click that gave
+            // the field focus, so select again on click (first click only).
+            onMouseDown={(e) => {
+              selectOnClick.current = document.activeElement !== e.currentTarget;
+            }}
+            onClick={(e) => {
+              const input = e.currentTarget;
+              if (selectOnClick.current) setTimeout(() => input.select(), 0);
+              selectOnClick.current = false;
+            }}
             onChange={(e) => {
               setFormData({ ...formData, data_path: e.target.value });
               setPathStatus("idle");
