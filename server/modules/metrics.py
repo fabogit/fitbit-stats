@@ -112,19 +112,38 @@ def calculate_advanced_metrics(df):
             0.0
         )
 
-    # 6. TRIMP (Training Impulse)
-    if all(c in df.columns for c in ['zone_fat_burn', 'zone_cardio', 'zone_peak']):
-        df['trimp'] = (df['zone_fat_burn'] * 1 + df['zone_cardio'] * 2.5 + df['zone_peak'] * 4).round(1)
+    # 6. TRIMP (Training Impulse), a zone-weighted sum of minutes.
+    # The export reports minutes in four zones: OUT_OF_RANGE, LIGHT, MODERATE
+    # and VIGOROUS. Weights per minute:
+    #   OUT_OF_RANGE = 0 (below the training zones, not counted)
+    #   LIGHT        = 1 (same weight the old FAT_BURN zone had)
+    #   MODERATE     = 2.5 (old CARDIO)
+    #   VIGOROUS     = 4 (old PEAK)
+    # Columns named after the old zones (FAT_BURN, CARDIO, PEAK) are still
+    # summed with the same weights if present.
+    trimp_weights = {
+        'zone_light': 1, 'zone_fat_burn': 1,
+        'zone_moderate': 2.5, 'zone_cardio': 2.5,
+        'zone_vigorous': 4, 'zone_peak': 4,
+    }
+    zone_cols = [c for c in trimp_weights if c in df.columns]
+    if zone_cols:
+        trimp = sum(df[c].fillna(0) * trimp_weights[c] for c in zone_cols).round(1)
+        # A day with no zone data at all is unknown (NaN), not a rest day (0)
+        has_zone_data = df[zone_cols].notna().any(axis=1)
+        df['trimp'] = trimp.where(has_zone_data)
     else:
-        df['trimp'] = 0.0
+        df['trimp'] = np.nan
 
-    # 7. Training Monotony & Strain
+    # 7. Training Monotony & Strain (NaN on days without zone data)
     if 'trimp' in df.columns:
         trimp_mean = df['trimp'].rolling('7D', min_periods=3).mean()
         trimp_std = df['trimp'].rolling('7D', min_periods=3).std()
         df['training_monotony'] = np.where((trimp_std > 0) & (pd.notna(trimp_std)), (trimp_mean / trimp_std).round(2), 0)
         trimp_sum = df['trimp'].rolling('7D', min_periods=1).sum()
         df['training_strain'] = (trimp_sum * df['training_monotony']).round(1)
+        no_trimp = df['trimp'].isna()
+        df.loc[no_trimp, ['training_monotony', 'training_strain']] = np.nan
 
     # 8. Illness Predictor (Daily & Trend)
     if 'temperature_variation' in df.columns and 'respiratory_rate' in df.columns:

@@ -172,12 +172,16 @@ def parse_active_zones_csv(file_path):
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
 
     # Group by date and zone type, count minutes (each row is 1 min)
+    # Current export names (OUT_OF_RANGE, LIGHT, MODERATE, VIGOROUS) plus the
+    # older FAT_BURN, CARDIO and PEAK, which are still accepted.
     zone_map = {
         'OUT_OF_RANGE': 'zone_out_of_range',
+        'LIGHT': 'zone_light',
+        'MODERATE': 'zone_moderate',
+        'VIGOROUS': 'zone_vigorous',
         'FAT_BURN': 'zone_fat_burn',
         'CARDIO': 'zone_cardio',
         'PEAK': 'zone_peak',
-        'LIGHT': 'zone_light'
     }
 
     # Pivot to get zones as columns
