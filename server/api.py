@@ -5,10 +5,11 @@ import os
 import json
 import asyncio
 from contextlib import asynccontextmanager
-from typing import List
+from datetime import date
+from typing import List, Literal
 
 import uvicorn
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -131,12 +132,35 @@ app.add_middleware(
 )
 
 
+# Biometric limits. Keep identical to client/src/lib/biometrics.ts (all bounds inclusive).
+HEIGHT_CM_MIN = 50
+HEIGHT_CM_MAX = 250
+WEIGHT_KG_MIN = 20
+WEIGHT_KG_MAX = 300
+AGE_YEARS_MIN = 5
+AGE_YEARS_MAX = 120
+
+
+def age_on(dob: date, today: date) -> int:
+    """Completed years between dob and today."""
+    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+
 class ConfigPayload(BaseModel):
-    dob: str
-    gender: str
-    height: int = Field(..., gt=40, lt=260)
-    weight: float = Field(..., gt=20, lt=300)
+    dob: date
+    gender: Literal["male", "female"]
+    height: int = Field(..., ge=HEIGHT_CM_MIN, le=HEIGHT_CM_MAX)
+    weight: float = Field(..., ge=WEIGHT_KG_MIN, le=WEIGHT_KG_MAX)
     data_path: str
+
+    @field_validator("dob")
+    @classmethod
+    def dob_in_range(cls, value: date) -> date:
+        age = age_on(value, date.today())
+        if age < AGE_YEARS_MIN or age > AGE_YEARS_MAX:
+            raise ValueError(
+                f"date of birth must give an age between {AGE_YEARS_MIN} and {AGE_YEARS_MAX} years")
+        return value
 
 
 EXPORT_FOLDER = "Global Export Data"
@@ -201,7 +225,7 @@ def run_etl_sync(payload, loop):
     from modules import etl, metrics
 
     config.DATA_DIR = payload.data_path
-    config.USER_DOB = payload.dob
+    config.USER_DOB = payload.dob.isoformat()
     config.USER_HEIGHT_CM = payload.height
     config.USER_WEIGHT_KG = payload.weight
     config.USER_GENDER = payload.gender
@@ -268,7 +292,7 @@ async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
     import config
     # Save to session_config.json to persist across runs and for watcher
     session_config = {
-        "dob": payload.dob,
+        "dob": payload.dob.isoformat(),
         "gender": payload.gender,
         "height": payload.height,
         "weight": payload.weight,
