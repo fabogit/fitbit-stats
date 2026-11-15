@@ -15,6 +15,13 @@ import { CheckCircle2, AlertCircle, Search, Loader2, Trash2 } from "lucide-react
 import { useAppDispatch } from "../../store/store";
 import { fetchHealthData, setIsProcessing, setEtlProgress } from "../../features/dashboard/dashboardSlice";
 import { apiFetch, openStatusSocket, waitForServer } from "@/lib/api";
+import {
+  HEIGHT_CM_MIN,
+  HEIGHT_CM_MAX,
+  WEIGHT_KG_MIN,
+  WEIGHT_KG_MAX,
+  dobBounds,
+} from "@/lib/biometrics";
 
 interface ConfigFormProps {
   onSuccess: () => void;
@@ -171,6 +178,8 @@ export function ConfigForm({
     }
   };
 
+  const { min: dobMin, max: dobMax } = dobBounds();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -179,16 +188,20 @@ export function ConfigForm({
     const weightVal = parseFloat(formData.weight);
     const pathVal = formData.data_path.trim();
 
-    if (!formData.dob) {
+    if (!formData.dob || formData.dob < dobMin || formData.dob > dobMax) {
       alert("Please enter a valid Date of Birth");
       return;
     }
-    if (isNaN(heightVal) || heightVal < 50 || heightVal > 250) {
-      alert("Please enter a valid height (50-250 cm)");
+    if (formData.gender !== "male" && formData.gender !== "female") {
+      alert("Please select a gender");
       return;
     }
-    if (isNaN(weightVal) || weightVal < 20 || weightVal > 300) {
-      alert("Please enter a valid weight (20-300 kg)");
+    if (isNaN(heightVal) || heightVal < HEIGHT_CM_MIN || heightVal > HEIGHT_CM_MAX) {
+      alert(`Please enter a valid height (${HEIGHT_CM_MIN}-${HEIGHT_CM_MAX} cm)`);
+      return;
+    }
+    if (isNaN(weightVal) || weightVal < WEIGHT_KG_MIN || weightVal > WEIGHT_KG_MAX) {
+      alert(`Please enter a valid weight (${WEIGHT_KG_MIN}-${WEIGHT_KG_MAX} kg)`);
       return;
     }
     if (!pathVal) {
@@ -279,6 +292,8 @@ export function ConfigForm({
           <Input
             id="dob"
             type="date"
+            min={dobMin}
+            max={dobMax}
             required
             value={formData.dob}
             onChange={(e) => {
@@ -294,8 +309,9 @@ export function ConfigForm({
           <Input
             id="height"
             type="number"
-            min="50"
-            max="250"
+            min={HEIGHT_CM_MIN}
+            max={HEIGHT_CM_MAX}
+            step="1"
             required
             placeholder="e.g. 175 cm"
             value={formData.height}
@@ -312,8 +328,8 @@ export function ConfigForm({
           <Input
             id="weight"
             type="number"
-            min="20"
-            max="300"
+            min={WEIGHT_KG_MIN}
+            max={WEIGHT_KG_MAX}
             step="0.1"
             required
             placeholder="e.g. 70.0 kg"
@@ -332,6 +348,7 @@ export function ConfigForm({
         <Label htmlFor="gender">Gender</Label>
         <Select
           value={formData.gender}
+          required
           onValueChange={(value) => setFormData({ ...formData, gender: value })}
         >
           <SelectTrigger id="gender">
