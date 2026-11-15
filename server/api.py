@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import json
 import asyncio
@@ -243,4 +244,6 @@ async def health():
     return {"status": "ok"}
 
 if __name__ == "__main__":
+    # Needed so the ETL process pool works in the frozen (PyInstaller) sidecar.
+    multiprocessing.freeze_support()
     uvicorn.run(app, host="127.0.0.1", port=8000)
