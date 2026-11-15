@@ -1,5 +1,7 @@
 import glob
 import os
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 import pandas as pd
 import config
 from modules import parsers
@@ -40,6 +42,35 @@ def filter_by_date(df):
     return df
 
 
+# Parsers heavy enough (hundreds of large files) to be worth a process pool.
+# Decision (heart-rate speed-up): the min/max/avg BPM columns are kept, the
+# parser is rewritten without pandas and its files are parsed in parallel.
+# Skipping the source would drop these columns from dashboard_data.json.
+PARALLEL_PARSERS = (parsers.parse_heart_rate_intraday_summary,)
+MAX_WORKERS = 8
+
+
+def _safe_parse(parser_func, path):
+    """Run a parser on one file; return (chunk, error) so errors don't abort a batch."""
+    try:
+        return parser_func(path), None
+    except Exception as e:
+        return None, e
+
+
+def _parse_files(files, parser_func):
+    """Parse files in order, in a process pool for heavy parsers when it is worthwhile."""
+    work = partial(_safe_parse, parser_func)
+    workers = min(MAX_WORKERS, os.cpu_count() or 1)
+    if parser_func in PARALLEL_PARSERS and workers > 1 and len(files) > workers:
+        try:
+            with ProcessPoolExecutor(workers) as pool:
+                return list(pool.map(work, files, chunksize=4))
+        except Exception as e:
+            print(f"   Process pool unavailable ({e}); parsing sequentially.")
+    return [work(f) for f in files]
+
+
 def load_collection(folder_name, file_pattern, parser_func):
     """
     Scans a specific folder for files matching a pattern, parses them,
@@ -64,13 +95,11 @@ def load_collection(folder_name, file_pattern, parser_func):
     print(f"   Loading {len(files)} files for {file_pattern}...")
 
     frames = []
-    for f in files:
-        try:
-            chunk = parser_func(f)
-            if chunk is not None and not chunk.empty:
-                frames.append(chunk)
-        except Exception as e:
-            print(f"Error {f}: {e}")
+    for f, (chunk, error) in zip(files, _parse_files(files, parser_func)):
+        if error is not None:
+            print(f"Error {f}: {error}")
+        elif chunk is not None and not chunk.empty:
+            frames.append(chunk)
 
     if not frames:
         return pd.DataFrame()
