@@ -1,73 +1,37 @@
-# React + TypeScript + Vite
+# FitStats client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The user interface of FitStats: a React single-page app that is also packaged as a desktop app with Tauri. It reads the data produced by the Python backend in `../server`. See the [main README](../README.md) for what the project does, how to install it and how to run the full stack.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- React 19 and TypeScript, built with Vite
+- Redux Toolkit for state, Recharts for charts, TanStack Table for the data grid
+- Tailwind CSS with Radix UI primitives
+- Tauri v2 for the desktop shell (`src-tauri`)
 
-## React Compiler
+## Scripts
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Run them from this folder with `pnpm`:
 
-## Expanding the ESLint configuration
+| Script | What it does |
+| --- | --- |
+| `pnpm run dev` | Starts the Vite dev server |
+| `pnpm run build` | Type-checks (`tsc -b`) and builds the production bundle into `dist/` |
+| `pnpm run lint` | Runs ESLint on the whole client |
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Folder layout
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+client/
+├── public/        Static files (favicon)
+├── src/
+│   ├── components/  dashboard views and charts, onboarding, theme, shared UI
+│   ├── features/    Redux slice with the dashboard state
+│   ├── hooks/       React hooks
+│   ├── lib/         API client, analytics and statistics helpers
+│   ├── store/       Redux store and theme slice
+│   └── types/       TypeScript types
+├── src-tauri/     Rust code, configuration and icons of the desktop app
+├── Dockerfile     Image that serves the built client with Nginx
+└── nginx.conf     Nginx configuration used by that image
 ```
