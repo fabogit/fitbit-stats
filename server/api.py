@@ -45,6 +45,10 @@ def build_allowed_origins(extra: str = "") -> List[str]:
     return origins
 
 
+# Computed once; shared by the CORS middleware and the WebSocket origin check.
+ALLOWED_ORIGINS = build_allowed_origins(os.environ.get(ORIGINS_ENV, ""))
+
+
 def expected_token() -> str:
     return os.environ.get(TOKEN_ENV, "")
 
@@ -73,12 +77,18 @@ def request_token(scope) -> str:
 
 
 class TokenMiddleware:
-    """Requires the per-launch token when FITSTATS_API_TOKEN is set."""
+    """Checks the WebSocket origin and, when FITSTATS_API_TOKEN is set, the token."""
 
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            # Browsers do not apply CORS to WebSockets, so check the origin here.
+            # A missing Origin (non-browser client) is left to the token check.
+            origin = _header(scope, b"origin")
+            if origin and origin not in ALLOWED_ORIGINS:
+                return await self._reject_websocket(receive, send)
         expected = expected_token()
         # Preflight requests carry no credentials by design; CORS answers them.
         is_preflight = scope["type"] == "http" and scope["method"] == "OPTIONS"
@@ -88,11 +98,14 @@ class TokenMiddleware:
         if token_matches(request_token(scope), expected):
             return await self.app(scope, receive, send)
         if scope["type"] == "websocket":
-            await receive()  # websocket.connect
-            await send({"type": "websocket.close", "code": 1008})
-            return
+            return await self._reject_websocket(receive, send)
         response = JSONResponse({"detail": "Unauthorized"}, status_code=401)
         await response(scope, receive, send)
+
+    @staticmethod
+    async def _reject_websocket(receive, send):
+        await receive()  # websocket.connect
+        await send({"type": "websocket.close", "code": 1008})
 
 
 @asynccontextmanager
@@ -111,7 +124,7 @@ app = FastAPI(title="FitStats Config API", lifespan=lifespan)
 app.add_middleware(TokenMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=build_allowed_origins(os.environ.get(ORIGINS_ENV, "")),
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],

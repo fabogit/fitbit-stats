@@ -135,3 +135,35 @@ def test_websocket_with_token_is_accepted(client, with_token):
 def test_websocket_without_token_works_when_variable_unset(client, no_token):
     with client.websocket_connect("/ws/status") as ws:
         ws.send_text("ping")
+
+
+def ws_connect(client, origin=None, subprotocols=None):
+    headers = {"Origin": origin} if origin else {}
+    return client.websocket_connect("/ws/status", headers=headers, subprotocols=subprotocols)
+
+
+def test_websocket_from_unlisted_origin_is_rejected_without_token(client, no_token):
+    with pytest.raises(WebSocketDisconnect):
+        with ws_connect(client, OTHER_ORIGIN):
+            pass
+
+
+def test_websocket_from_unlisted_origin_is_rejected_with_token(client, with_token):
+    with pytest.raises(WebSocketDisconnect):
+        with ws_connect(client, OTHER_ORIGIN, ["fitstats", "token." + TOKEN]):
+            pass
+
+
+def test_websocket_from_allowed_origin_is_accepted(client, no_token):
+    with ws_connect(client, APP_ORIGIN) as ws:
+        ws.send_text("ping")
+
+
+def test_websocket_from_allowed_origin_with_token_is_accepted(client, with_token):
+    with ws_connect(client, APP_ORIGIN, ["fitstats", "token." + TOKEN]) as ws:
+        ws.send_text("ping")
+
+
+def test_websocket_without_origin_is_accepted_when_token_not_required(client, no_token):
+    with ws_connect(client) as ws:
+        ws.send_text("ping")

@@ -1,3 +1,5 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
+
 /**
  * Centralized API base URL.
  *
@@ -10,8 +12,6 @@ export const SERVER_URL = {
   API: "http://127.0.0.1:8000",
   WS: "ws://127.0.0.1:8000",
 };
-
-import { invoke, isTauri } from "@tauri-apps/api/core";
 
 let tokenPromise: Promise<string | null> | null = null;
 
