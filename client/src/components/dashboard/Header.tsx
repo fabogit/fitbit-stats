@@ -41,7 +41,7 @@ export function Header({
       {/* Center Section: App Title & Dynamic View Name */}
       <div className="flex-[2] flex items-center justify-center">
         <h2 className="text-sm md:text-base font-semibold tracking-tight text-center">
-          <span className="text-muted-foreground font-normal">FitStats</span>
+          <span className="text-muted-foreground font-normal">FitStats v{__APP_VERSION__}</span>
           <span className="mx-2 text-border">—</span>
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">
             {currentTitle}

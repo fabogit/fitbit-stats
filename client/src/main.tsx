@@ -8,6 +8,8 @@ import { ThemeManager } from "./components/theme/ThemeManager";
 
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
+document.title = `FitStats v${__APP_VERSION__}`;
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Provider store={store}>
