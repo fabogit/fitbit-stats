@@ -80,7 +80,7 @@ For users who prefer a web-based interface or home lab deployment, a full Docker
 
 - **Frontend (port 8080):** The web dashboard served by Nginx.
 - **API Server (port 8000):** The Python/FastAPI engine handling calculations.
-- **Engine Watcher:** An optional background service that automatically triggers a re-calculate when files in the `data/` directory are modified.
+- **Engine Watcher:** A background service, always started by `docker-compose.yml`, that automatically triggers a re-calculate when files in the `data/` directory are modified.
 
 ---
 
@@ -104,7 +104,7 @@ If you wish to modify the code, you will need to run the hybrid stack locally.
 
 ### 1. Compile the Python Sidecar
 
-Tauri absolutely needs the Python engine compiled as a binary in its `bin/` folder before launching.
+Tauri needs the Python API server (`fitstats-server`) compiled as a binary in its `bin/` folder before launching. Without it, `pnpm tauri dev` fails.
 
 ```bash
 cd server
@@ -112,11 +112,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install pyinstaller
+
+# Compile the standalone executable (output: dist/fitstats-server)
+pyinstaller --clean fitstats-server.spec
 ```
-
-# Compile standalone executable
-
-`pyinstaller --clean fitstats-engine.spec`
 
 #### Sidecar Naming Convention
 
@@ -124,15 +123,16 @@ Tauri requires sidecars to have a specific suffix based on the **target triple**
 
 Common names:
 
-- **Mac (Silicon):** `fitstats-engine-aarch64-apple-darwin`
-- **Mac (Intel):** `fitstats-engine-x86_64-apple-darwin`
-- **Linux:** `fitstats-engine-x86_64-unknown-linux-gnu`
-- **Windows:** `fitstats-engine-x86_64-pc-windows-msvc.exe`
+- **Mac (Apple Silicon):** `fitstats-server-aarch64-apple-darwin`
+- **Linux:** `fitstats-server-x86_64-unknown-linux-gnu`
+- **Windows:** `fitstats-server-x86_64-pc-windows-msvc.exe`
+
+Release installers are built only for these three targets. On an Intel Mac you can still run from source: use the `x86_64-apple-darwin` suffix for the binary name.
 
 ```bash
-# Example for Mac M1/M2/M3/M4:
+# Example for Linux (replace the suffix with your own target triple):
 mkdir -p ../client/src-tauri/bin
-cp dist/fitstats-engine ../client/src-tauri/bin/fitstats-engine-aarch64-apple-darwin
+cp dist/fitstats-server ../client/src-tauri/bin/fitstats-server-x86_64-unknown-linux-gnu
 ```
 
 ### 2. Run the Tauri App
