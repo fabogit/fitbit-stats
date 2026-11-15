@@ -89,32 +89,6 @@ def load_collection(folder_name, file_pattern, parser_func):
     return full_df
 
 
-def get_data_date_range():
-    """
-    Scans the data directory to find the earliest and latest available dates.
-    Uses 'calories-*.json' as the reliable anchor for date coverage.
-    """
-    search_path = os.path.join(
-        config.DATA_DIR, "Global Export Data", "calories-*.json")
-    files = glob.glob(search_path)
-    if not files:
-        return None, None
-
-    dates = []
-    for f in files:
-        try:
-            # Extract date from filename: calories-YYYY-MM-DD.json
-            date_part = os.path.basename(f).replace(
-                'calories-', '').replace('.json', '')
-            dates.append(pd.to_datetime(date_part))
-        except:
-            continue
-
-    if not dates:
-        return None, None
-    return min(dates).strftime('%Y-%m-%d'), max(dates).strftime('%Y-%m-%d')
-
-
 def merge_all_data(progress_callback=None):
     """
     Main ETL Orchestrator.
@@ -131,14 +105,9 @@ def merge_all_data(progress_callback=None):
     Returns:
         pd.DataFrame: The fully processed Master Dataset ready for analysis.
     """
-    # Auto-detect date range if not explicitly set
-    detected_start, detected_end = get_data_date_range()
-    if not config.START_DATE and detected_start:
-        config.START_DATE = detected_start
-    if not config.END_DATE and detected_end:
-        config.END_DATE = detected_end
-
-    date_str = f"{config.START_DATE} to {config.END_DATE}" if config.START_DATE else "All Time"
+    # START_DATE / END_DATE are applied only when explicitly set; the range of
+    # the data itself comes from the merged index, never from file names.
+    date_str = f"{config.START_DATE or 'first day'} to {config.END_DATE or 'last day'}"
     print(f"\n=== BUILDING MASTER DATASET ({date_str}) ===")
 
     # Define Loading Plan: (Folder, Pattern, Parser, Label)
