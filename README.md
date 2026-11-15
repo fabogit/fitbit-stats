@@ -173,4 +173,4 @@ If you are looking for older versions of the project:
 
 ## 📄 License
 
-Personal Use.
+Released under the [MIT License](LICENSE).
