@@ -145,7 +145,7 @@ export function ConfigForm({
       setFormData({ dob: "", gender: "", height: "", weight: "", data_path: "./data" });
       setPathStatus("idle");
       // Calling fetchHealthData will reload empty state causing NoDataState to re-render in Dashboard
-      dispatch(fetchHealthData());
+      dispatch(fetchHealthData({ force: true }));
       alert("All application data has been successfully deleted.");
     } catch (e) {
       console.error("Error clearing data:", e);
@@ -216,7 +216,7 @@ export function ConfigForm({
               dispatch(setIsProcessing(false));
               ws.close();
               if (data.status === "success") {
-                dispatch(fetchHealthData());
+                dispatch(fetchHealthData({ force: true }));
               } else {
                 alert("Error during ETL: " + data.message);
               }

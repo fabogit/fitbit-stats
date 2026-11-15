@@ -34,7 +34,7 @@ const initialState: DashboardState = {
   etlStep: "",
 };
 
-export const fetchHealthData = createAsyncThunk(
+export const fetchHealthData = createAsyncThunk<HealthRecord[], { force?: boolean } | undefined>(
   "dashboard/fetchHealthData",
   async () => {
     try {
@@ -62,7 +62,10 @@ export const fetchHealthData = createAsyncThunk(
   },
   {
     // --- CACHING LOGIC ---
-    condition: (_, { getState }) => {
+    // Skip the call when data is already loaded or loading, unless the caller
+    // passes `force` (after a finished ETL run or a reset the file has changed).
+    condition: (arg, { getState }) => {
+      if (arg?.force) return true;
       const { dashboard } = getState() as { dashboard: DashboardState };
 
       if (dashboard.status === "succeeded" || dashboard.status === "loading") {
@@ -133,6 +136,12 @@ const dashboardSlice = createSlice({
           state.filteredData = action.payload.filter(
             (d) => d.date >= startDate && d.date <= endDate
           );
+        } else {
+          // Empty result (e.g. after a reset): drop everything shown before.
+          state.filteredData = [];
+          state.dateRange = null;
+          state.minDataDate = "";
+          state.maxDataDate = "";
         }
       })
       .addCase(fetchHealthData.rejected, (state, action) => {
