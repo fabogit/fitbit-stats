@@ -96,11 +96,14 @@ export function DateFilter() {
             className="bg-transparent text-xs text-foreground focus:outline-none w-full cursor-pointer p-0"
             value={dateRange.start}
             min={minDate}
-            max={maxDate}
+            max={dateRange.end}
             onChange={(e) => {
-              dispatch(
-                setDateRange({ start: e.target.value, end: dateRange.end })
-              );
+              let val = e.target.value;
+              if (!val) return;
+              if (val > maxDate) val = maxDate;
+              // A start after the end pulls the end along, so the range stays valid
+              const end = val > dateRange.end ? val : dateRange.end;
+              dispatch(setDateRange({ start: val, end }));
               setActivePreset("CUSTOM");
             }}
           />
@@ -111,12 +114,15 @@ export function DateFilter() {
             type="date"
             className="bg-transparent text-xs text-foreground focus:outline-none w-full cursor-pointer p-0"
             value={dateRange.end}
-            min={minDate}
+            min={dateRange.start}
             max={maxDate}
             onChange={(e) => {
               let val = e.target.value;
+              if (!val) return;
               if (val > maxDate) val = maxDate;
-              dispatch(setDateRange({ start: dateRange.start, end: val }));
+              // An end before the start pulls the start along, so the range stays valid
+              const start = val < dateRange.start ? val : dateRange.start;
+              dispatch(setDateRange({ start, end: val }));
               setActivePreset("CUSTOM");
             }}
           />

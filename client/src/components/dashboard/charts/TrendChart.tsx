@@ -89,7 +89,6 @@ export const TrendChart = memo(function TrendChart({
             />
 
             <Legend wrapperStyle={{ paddingTop: "10px" }} />
-            <Legend wrapperStyle={{ paddingTop: "10px" }} />
 
             <Line
               yAxisId="left"

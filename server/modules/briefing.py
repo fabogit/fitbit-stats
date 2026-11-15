@@ -158,7 +158,8 @@ def get_daily_brief(target_date_str=None):
             "statusEmoji": emoji
         })
         
-        sleep_advice = f"{deep:.0f}m Deep + {rem:.0f}m REM cycles recorded."
+        if pd.notna(deep) and pd.notna(rem):
+            sleep_advice = f"{deep:.0f}m Deep + {rem:.0f}m REM cycles recorded."
     else:
         sleep_metrics.append({
             "label": "Sleep Score",

@@ -23,11 +23,11 @@ export interface HealthRecord {
   // Readiness
   readiness_raw: number | null;
 
-  // Sleep Stages
-  sleep_deep: number;
-  sleep_light: number;
-  sleep_rem: number;
-  sleep_awake: number;
+  // Sleep Stages (null on days without a sleep record)
+  sleep_deep: number | null;
+  sleep_light: number | null;
+  sleep_rem: number | null;
+  sleep_awake: number | null;
 
   // Physiology
   rmssd: number | null; // HRV
