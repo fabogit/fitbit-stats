@@ -27,8 +27,13 @@ fn stop_sidecar(child: CommandChild) {
   }
   #[cfg(windows)]
   {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     // /T also ends the server process started by the bootloader.
-    let _ = std::process::Command::new("taskkill").args(["/PID", &pid, "/T", "/F"]).status();
+    let _ = std::process::Command::new("taskkill")
+      .args(["/PID", &pid, "/T", "/F"])
+      .creation_flags(CREATE_NO_WINDOW)
+      .status();
   }
   let _ = child.kill();
 }
