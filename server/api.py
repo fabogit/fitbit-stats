@@ -315,7 +315,7 @@ async def websocket_status(websocket: WebSocket):
     try:
         while True:
             # Wait passively (keep-alive)
-            data = await websocket.receive_text()
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 

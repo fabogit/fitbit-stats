@@ -1,4 +1,6 @@
 import os
+import platform
+import sys
 
 # Base directory for data
 DATA_DIR = os.environ.get("DATA_DIR", "data")
@@ -14,9 +16,6 @@ USER_DOB = os.environ.get("USER_DOB", "")
 USER_GENDER = os.environ.get("USER_GENDER", "")
 
 # Output paths
-import sys
-import platform
-
 if getattr(sys, 'frozen', False):
     import platform
     home = os.path.expanduser("~")
