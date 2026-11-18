@@ -1,41 +1,174 @@
+import hmac
+import logging
+import multiprocessing
 import os
 import json
 import asyncio
-from typing import List
+from contextlib import asynccontextmanager
+from datetime import date
+from typing import List, Literal
 
 import uvicorn
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from modules.briefing import get_daily_brief
 
 # Change working directory so relative paths in config.py work correctly
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-app = FastAPI(title="FitStats Config API")
+TOKEN_ENV = "FITSTATS_API_TOKEN"
+ORIGINS_ENV = "FITSTATS_ALLOWED_ORIGINS"
+WS_PROTOCOL = "fitstats"
+WS_TOKEN_PREFIX = "token."
+OPEN_PATHS = {"/api/health"}
 
-# Allow CORS for local development (React runs on 8080/5173, etc)
+# Origins of the application itself: desktop webview and Vite dev server.
+APP_ORIGINS = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+logger = logging.getLogger("uvicorn.error")
+
+
+def build_allowed_origins(extra: str = "") -> List[str]:
+    """App origins plus the comma-separated extra web origins (never '*')."""
+    origins = list(APP_ORIGINS)
+    for origin in (extra or "").split(","):
+        origin = origin.strip()
+        if origin and origin != "*" and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+# Computed once; shared by the CORS middleware and the WebSocket origin check.
+ALLOWED_ORIGINS = build_allowed_origins(os.environ.get(ORIGINS_ENV, ""))
+
+
+def expected_token() -> str:
+    return os.environ.get(TOKEN_ENV, "")
+
+
+def token_matches(candidate: str, expected: str) -> bool:
+    return hmac.compare_digest(candidate.encode(), expected.encode())
+
+
+def _header(scope, name: bytes) -> str:
+    for key, value in scope.get("headers", []):
+        if key == name:
+            return value.decode("latin-1")
+    return ""
+
+
+def request_token(scope) -> str:
+    """Token offered by the caller: Authorization header, or WebSocket subprotocol."""
+    if scope["type"] == "websocket":
+        for proto in _header(scope, b"sec-websocket-protocol").split(","):
+            proto = proto.strip()
+            if proto.startswith(WS_TOKEN_PREFIX):
+                return proto[len(WS_TOKEN_PREFIX):]
+        return ""
+    scheme, _, value = _header(scope, b"authorization").partition(" ")
+    return value.strip() if scheme.lower() == "bearer" else ""
+
+
+class TokenMiddleware:
+    """Checks the WebSocket origin and, when FITSTATS_API_TOKEN is set, the token."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            # Browsers do not apply CORS to WebSockets, so check the origin here.
+            # A missing Origin (non-browser client) is left to the token check.
+            origin = _header(scope, b"origin")
+            if origin and origin not in ALLOWED_ORIGINS:
+                return await self._reject_websocket(receive, send)
+        expected = expected_token()
+        # Preflight requests carry no credentials by design; CORS answers them.
+        is_preflight = scope["type"] == "http" and scope["method"] == "OPTIONS"
+        if (scope["type"] not in ("http", "websocket") or not expected
+                or is_preflight or scope["path"] in OPEN_PATHS):
+            return await self.app(scope, receive, send)
+        if token_matches(request_token(scope), expected):
+            return await self.app(scope, receive, send)
+        if scope["type"] == "websocket":
+            return await self._reject_websocket(receive, send)
+        response = JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        await response(scope, receive, send)
+
+    @staticmethod
+    async def _reject_websocket(receive, send):
+        await receive()  # websocket.connect
+        await send({"type": "websocket.close", "code": 1008})
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    if expected_token():
+        logger.info("API access token required (per-launch token is set).")
+    else:
+        logger.info("No API access token configured: requests are not token-protected.")
+    yield
+
+
+app = FastAPI(title="FitStats Config API", lifespan=lifespan)
+
+# Order matters: CORS is added last so it wraps the token check and also
+# decorates the 401 responses for the app's own origins.
+app.add_middleware(TokenMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
+# Biometric limits. Keep identical to client/src/lib/biometrics.ts (all bounds inclusive).
+HEIGHT_CM_MIN = 50
+HEIGHT_CM_MAX = 250
+WEIGHT_KG_MIN = 20
+WEIGHT_KG_MAX = 300
+AGE_YEARS_MIN = 5
+AGE_YEARS_MAX = 120
+
+
+def age_on(dob: date, today: date) -> int:
+    """Completed years between dob and today."""
+    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+
 class ConfigPayload(BaseModel):
-    dob: str
-    gender: str
-    height: int = Field(..., gt=40, lt=260)
-    weight: float = Field(..., gt=20, lt=300)
+    dob: date
+    gender: Literal["male", "female"]
+    height: int = Field(..., ge=HEIGHT_CM_MIN, le=HEIGHT_CM_MAX)
+    weight: float = Field(..., ge=WEIGHT_KG_MIN, le=WEIGHT_KG_MAX)
     data_path: str
+
+    @field_validator("dob")
+    @classmethod
+    def dob_in_range(cls, value: date) -> date:
+        age = age_on(value, date.today())
+        if age < AGE_YEARS_MIN or age > AGE_YEARS_MAX:
+            raise ValueError(
+                f"date of birth must give an age between {AGE_YEARS_MIN} and {AGE_YEARS_MAX} years")
+        return value
+
+
+EXPORT_FOLDER = "Global Export Data"
 
 
 @app.get("/api/check-path")
 async def check_path(path: str):
-    """Checks if the data path exists and contains heart rate data."""
+    """Checks that the path is an export root: it must contain the 'Global Export Data' folder with JSON files."""
     # Resolve relative paths from the current working directory ('server' folder)
     target_path = path
     if not os.path.isabs(path):
@@ -45,6 +178,21 @@ async def check_path(path: str):
     if not os.path.exists(target_path):
         return {"valid": False, "reason": f"Path '{target_path}' does not exist"}
 
+    if not os.path.isdir(target_path):
+        return {"valid": False, "reason": f"Path '{target_path}' is not a folder"}
+
+    export_dir = os.path.join(target_path, EXPORT_FOLDER)
+    if not os.path.isdir(export_dir):
+        if os.path.basename(os.path.normpath(target_path)) == EXPORT_FOLDER:
+            reason = (f"This is the '{EXPORT_FOLDER}' folder itself. "
+                      "Select its parent folder instead.")
+        else:
+            reason = f"Folder '{EXPORT_FOLDER}' not found in '{target_path}'"
+        return {"valid": False, "reason": reason}
+
+    if not any(name.endswith(".json") for name in os.listdir(export_dir)):
+        return {"valid": False, "reason": f"Folder '{EXPORT_FOLDER}' contains no JSON data files"}
+
     return {"valid": True, "path": target_path}
 
 
@@ -52,8 +200,8 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, subprotocol: str = None):
+        await websocket.accept(subprotocol=subprotocol)
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
@@ -77,7 +225,7 @@ def run_etl_sync(payload, loop):
     from modules import etl, metrics
 
     config.DATA_DIR = payload.data_path
-    config.USER_DOB = payload.dob
+    config.USER_DOB = payload.dob.isoformat()
     config.USER_HEIGHT_CM = payload.height
     config.USER_WEIGHT_KG = payload.weight
     config.USER_GENDER = payload.gender
@@ -144,7 +292,7 @@ async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
     import config
     # Save to session_config.json to persist across runs and for watcher
     session_config = {
-        "dob": payload.dob,
+        "dob": payload.dob.isoformat(),
         "gender": payload.gender,
         "height": payload.height,
         "weight": payload.weight,
@@ -162,7 +310,8 @@ async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
 @app.websocket("/ws/status")
 async def websocket_status(websocket: WebSocket):
     """Persistent channel to notify the client of the ETL status."""
-    await manager.connect(websocket)
+    offered = websocket.scope.get("subprotocols", [])
+    await manager.connect(websocket, WS_PROTOCOL if WS_PROTOCOL in offered else None)
     try:
         while True:
             # Wait passively (keep-alive)
@@ -212,11 +361,11 @@ async def run_brief(payload: dict = None):
     date = payload.get("date") if payload else None
     try:
         brief = get_daily_brief(date)
-        if "error" in brief:
-            raise HTTPException(status_code=404, detail=brief["error"])
-        return brief
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    if "error" in brief:
+        raise HTTPException(status_code=404, detail=brief["error"])
+    return brief
 
 
 @app.get("/api/health")
@@ -225,4 +374,6 @@ async def health():
     return {"status": "ok"}
 
 if __name__ == "__main__":
+    # Needed so the ETL process pool works in the frozen (PyInstaller) sidecar.
+    multiprocessing.freeze_support()
     uvicorn.run(app, host="127.0.0.1", port=8000)

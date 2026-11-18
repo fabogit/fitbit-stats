@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,14 @@ import {
 import { CheckCircle2, AlertCircle, Search, Loader2, Trash2 } from "lucide-react";
 import { useAppDispatch } from "../../store/store";
 import { fetchHealthData, setIsProcessing, setEtlProgress } from "../../features/dashboard/dashboardSlice";
-import { SERVER_URL } from "@/lib/api";
+import { apiFetch, openStatusSocket, waitForServer } from "@/lib/api";
+import {
+  HEIGHT_CM_MIN,
+  HEIGHT_CM_MAX,
+  WEIGHT_KG_MIN,
+  WEIGHT_KG_MAX,
+  dobBounds,
+} from "@/lib/biometrics";
 
 interface ConfigFormProps {
   onSuccess: () => void;
@@ -25,6 +32,7 @@ export function ConfigForm({
   onSuccess,
   submitLabel = "Start Calculation",
 }: ConfigFormProps) {
+  const selectOnClick = useRef(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     dob: "",
@@ -38,10 +46,25 @@ export function ConfigForm({
     "idle" | "checking" | "valid" | "invalid"
   >("idle");
   const [pathError, setPathError] = useState("");
+  const [serverState, setServerState] = useState<
+    "starting" | "ready" | "failed"
+  >("starting");
+  const [serverAttempt, setServerAttempt] = useState(0);
+
+  // Wait for the local server before talking to it: a cold start takes seconds.
+  useEffect(() => {
+    const controller = new AbortController();
+    setServerState("starting");
+    waitForServer(controller.signal).then((ok) => {
+      if (!controller.signal.aborted) setServerState(ok ? "ready" : "failed");
+    });
+    return () => controller.abort();
+  }, [serverAttempt]);
 
   useEffect(() => {
+    if (serverState !== "ready") return;
     const loadConfig = async () => {
-      fetch(`${SERVER_URL.API}/api/config`)
+      apiFetch("/api/config")
         .then((res) => res.json())
         .then((data) => {
           if (data && Object.keys(data).length > 0) {
@@ -61,7 +84,7 @@ export function ConfigForm({
         .catch((err) => console.error("Could not fetch config:", err));
     };
     loadConfig();
-  }, []);
+  }, [serverState]);
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -108,8 +131,8 @@ export function ConfigForm({
     setPathStatus("checking");
 
     try {
-      const resp = await fetch(
-        `${SERVER_URL.API}/api/check-path?path=${encodeURIComponent(pathToCheck.trim())}`,
+      const resp = await apiFetch(
+        `/api/check-path?path=${encodeURIComponent(pathToCheck.trim())}`,
       );
       const data = await resp.json();
       if (data.valid) {
@@ -126,11 +149,12 @@ export function ConfigForm({
   }, []);
 
   useEffect(() => {
+    if (serverState !== "ready") return;
     const timer = setTimeout(() => {
       checkPath(formData.data_path);
     }, 500);
     return () => clearTimeout(timer);
-  }, [formData.data_path, checkPath]);
+  }, [formData.data_path, checkPath, serverState]);
 
   const dispatch = useAppDispatch();
 
@@ -140,12 +164,12 @@ export function ConfigForm({
     
     setLoading(true);
     try {
-      await fetch(`${SERVER_URL.API}/api/clear`, { method: "DELETE" });
+      await apiFetch("/api/clear", { method: "DELETE" });
       
       setFormData({ dob: "", gender: "", height: "", weight: "", data_path: "./data" });
       setPathStatus("idle");
       // Calling fetchHealthData will reload empty state causing NoDataState to re-render in Dashboard
-      dispatch(fetchHealthData());
+      dispatch(fetchHealthData({ force: true }));
       alert("All application data has been successfully deleted.");
     } catch (e) {
       console.error("Error clearing data:", e);
@@ -155,6 +179,8 @@ export function ConfigForm({
     }
   };
 
+  const { min: dobMin, max: dobMax } = dobBounds();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -163,16 +189,20 @@ export function ConfigForm({
     const weightVal = parseFloat(formData.weight);
     const pathVal = formData.data_path.trim();
 
-    if (!formData.dob) {
+    if (!formData.dob || formData.dob < dobMin || formData.dob > dobMax) {
       alert("Please enter a valid Date of Birth");
       return;
     }
-    if (isNaN(heightVal) || heightVal < 50 || heightVal > 250) {
-      alert("Please enter a valid height (50-250 cm)");
+    if (formData.gender !== "male" && formData.gender !== "female") {
+      alert("Please select a gender");
       return;
     }
-    if (isNaN(weightVal) || weightVal < 20 || weightVal > 300) {
-      alert("Please enter a valid weight (20-300 kg)");
+    if (isNaN(heightVal) || heightVal < HEIGHT_CM_MIN || heightVal > HEIGHT_CM_MAX) {
+      alert(`Please enter a valid height (${HEIGHT_CM_MIN}-${HEIGHT_CM_MAX} cm)`);
+      return;
+    }
+    if (isNaN(weightVal) || weightVal < WEIGHT_KG_MIN || weightVal > WEIGHT_KG_MAX) {
+      alert(`Please enter a valid weight (${WEIGHT_KG_MIN}-${WEIGHT_KG_MAX} kg)`);
       return;
     }
     if (!pathVal) {
@@ -183,8 +213,44 @@ export function ConfigForm({
     setLoading(true);
     dispatch(setIsProcessing(true));
 
+    let ws: WebSocket | null = null;
     try {
-      const resp = await fetch(`${SERVER_URL.API}/api/start`, {
+      // Open the status channel first: events broadcast before a client is
+      // connected are lost, so the ETL must not start until the socket is open.
+      const socket = await openStatusSocket();
+      ws = socket;
+      await new Promise<void>((resolve, reject) => {
+        socket.onopen = () => resolve();
+        socket.onerror = () => reject(new Error("WebSocket connection failed"));
+      });
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.event === "etl_progress") {
+            dispatch(setEtlProgress({ progress: data.progress, step: data.step }));
+          } else if (data.event === "etl_finished") {
+            dispatch(setIsProcessing(false));
+            socket.close();
+            if (data.status === "success") {
+              dispatch(fetchHealthData({ force: true }));
+            } else {
+              alert("Error during ETL: " + data.message);
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing WS message:", e);
+        }
+      };
+
+      socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        dispatch(setIsProcessing(false));
+        socket.close();
+        alert("WebSocket disconnected unexpectedly.");
+      };
+
+      const resp = await apiFetch("/api/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -198,43 +264,21 @@ export function ConfigForm({
 
       if (!resp.ok) {
         console.error("Failed to start processing");
+        socket.onerror = null;
+        socket.close();
         dispatch(setIsProcessing(false));
         setLoading(false);
         alert("Error starting calculation on the server.");
       } else {
-        // Close form instantly and listen in background
+        // Close form instantly; the already-open socket keeps listening
         onSuccess();
-        
-        const ws = new WebSocket(`${SERVER_URL.WS}/ws/status`);
-        
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.event === "etl_progress") {
-              dispatch(setEtlProgress({ progress: data.progress, step: data.step }));
-            } else if (data.event === "etl_finished") {
-              dispatch(setIsProcessing(false));
-              ws.close();
-              if (data.status === "success") {
-                dispatch(fetchHealthData());
-              } else {
-                alert("Error during ETL: " + data.message);
-              }
-            }
-          } catch (e) {
-            console.error("Error parsing WS message:", e);
-          }
-        };
-        
-        ws.onerror = (error) => {
-           console.error("WebSocket error:", error);
-           dispatch(setIsProcessing(false));
-           ws.close();
-           alert("WebSocket disconnected unexpectedly.");
-        };
       }
     } catch (err) {
       console.error(err);
+      if (ws) {
+        ws.onerror = null;
+        ws.close();
+      }
       dispatch(setIsProcessing(false));
       setLoading(false);
       alert("Failed to connect to the local server.");
@@ -249,6 +293,8 @@ export function ConfigForm({
           <Input
             id="dob"
             type="date"
+            min={dobMin}
+            max={dobMax}
             required
             value={formData.dob}
             onChange={(e) => {
@@ -264,8 +310,9 @@ export function ConfigForm({
           <Input
             id="height"
             type="number"
-            min="50"
-            max="250"
+            min={HEIGHT_CM_MIN}
+            max={HEIGHT_CM_MAX}
+            step="1"
             required
             placeholder="e.g. 175 cm"
             value={formData.height}
@@ -282,8 +329,8 @@ export function ConfigForm({
           <Input
             id="weight"
             type="number"
-            min="20"
-            max="300"
+            min={WEIGHT_KG_MIN}
+            max={WEIGHT_KG_MAX}
             step="0.1"
             required
             placeholder="e.g. 70.0 kg"
@@ -302,6 +349,7 @@ export function ConfigForm({
         <Label htmlFor="gender">Gender</Label>
         <Select
           value={formData.gender}
+          required
           onValueChange={(value) => setFormData({ ...formData, gender: value })}
         >
           <SelectTrigger id="gender">
@@ -349,6 +397,16 @@ export function ConfigForm({
             placeholder="./data"
             value={formData.data_path}
             onFocus={(e) => e.target.select()}
+            // The desktop WebView clears the selection on the click that gave
+            // the field focus, so select again on click (first click only).
+            onMouseDown={(e) => {
+              selectOnClick.current = document.activeElement !== e.currentTarget;
+            }}
+            onClick={(e) => {
+              const input = e.currentTarget;
+              if (selectOnClick.current) setTimeout(() => input.select(), 0);
+              selectOnClick.current = false;
+            }}
             onChange={(e) => {
               setFormData({ ...formData, data_path: e.target.value });
               setPathStatus("idle");
@@ -373,14 +431,33 @@ export function ConfigForm({
             )}
           </div>
         </div>
+        {serverState === "starting" && (
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Starting local server...
+          </p>
+        )}
+        {serverState === "failed" && (
+          <p className="text-xs text-red-500 mt-1">
+            The local server did not start.{" "}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => setServerAttempt((n) => n + 1)}
+            >
+              Retry
+            </button>
+          </p>
+        )}
         {pathStatus === "invalid" && (
           <p className="text-xs text-red-500 mt-1 animate-in fade-in slide-in-from-top-1">
             {pathError}
           </p>
         )}
         <p className="text-[11px] text-muted-foreground/60 leading-tight mt-2">
-          Enter the absolute or relative path to your Fitbit export folder.
-          Usually contains files like <code>heart_rate-YYYY-MM-DD.json</code>.
+          Enter the absolute or relative path to your Fitbit export folder: the
+          one that contains the <code>Global Export Data</code> folder (not the
+          folder with the <code>heart_rate-*.json</code> files itself).
         </p>
       </div>
 

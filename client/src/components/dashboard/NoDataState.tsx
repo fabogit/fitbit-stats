@@ -13,7 +13,15 @@ export function NoDataState({
   title = "No Data Calculated Yet", 
   description = "Connect your Fitbit export folder and run your first calculation to see your health analytics."
 }: NoDataStateProps) {
-  const { isProcessing, etlProgress, etlStep } = useAppSelector((state) => state.dashboard);
+  const { isProcessing, etlProgress, etlStep, data, dateRange } = useAppSelector((state) => state.dashboard);
+
+  // Data exists but the selected period contains none of it: say so, and do
+  // not send the user back to the first-run calculation.
+  if (!isProcessing && data.length > 0 && dateRange) {
+    title = "No Data in the Selected Range";
+    description = `There are no records between ${dateRange.start} and ${dateRange.end}. Choose a different period in the date filter.`;
+    onAction = undefined;
+  }
 
   if (isProcessing) {
     return (

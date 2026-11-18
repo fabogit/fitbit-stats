@@ -61,6 +61,19 @@ _(Note: The app remembers your biometrics and folder path securely inside your O
 
 ---
 
+## 🧪 Sample Data
+
+No Fitbit export at hand? A small script generates a deterministic, fully synthetic export (about 60 days, invented values) in the same folder layout and file formats the app reads. It uses only the Python standard library:
+
+```bash
+python scripts/generate_sample_export.py /path/to/sample-export
+# optional: --days 60 --start 2024-01-01 --seed 42
+```
+
+The output folder is required and nothing is written inside the repository unless you point it there. Then, in the onboarding form (desktop app or Docker web UI), enter any biometrics and select the generated folder as the data path (for Docker, mount it as the `data` volume). The generated data is not committed: regenerate it whenever you need it.
+
+---
+
 ## 🐳 Docker Deployment
 
 For users who prefer a web-based interface or home lab deployment, a full Docker stack is provided.
@@ -80,7 +93,13 @@ For users who prefer a web-based interface or home lab deployment, a full Docker
 
 - **Frontend (port 8080):** The web dashboard served by Nginx.
 - **API Server (port 8000):** The Python/FastAPI engine handling calculations.
-- **Engine Watcher:** An optional background service that automatically triggers a re-calculate when files in the `data/` directory are modified.
+- **Engine Watcher:** A background service, always started by `docker-compose.yml`, that automatically triggers a re-calculate when files in the `data/` directory are modified.
+
+### Access to the API
+
+The API only accepts browser requests from an explicit list of allowed origins: the desktop app, the Vite development server, and the web origins listed in the `FITSTATS_ALLOWED_ORIGINS` environment variable (comma-separated, set for the `api-server` service in `docker-compose.yml`). The default value covers the frontend on port 8080 at `localhost` and `127.0.0.1`. If you open the web UI from a different address or port (for example another host name), add that origin to the variable.
+
+The desktop app additionally protects the API with a token generated at every launch. The Docker stack has no desktop shell to issue one, so it does not use a token (the server notes this once in its log at startup). Keep the API port (8000) reachable only from machines you trust.
 
 ---
 
@@ -104,7 +123,7 @@ If you wish to modify the code, you will need to run the hybrid stack locally.
 
 ### 1. Compile the Python Sidecar
 
-Tauri absolutely needs the Python engine compiled as a binary in its `bin/` folder before launching.
+Tauri needs the Python API server (`fitstats-server`) compiled as a binary in its `bin/` folder before launching. Without it, `pnpm tauri dev` fails.
 
 ```bash
 cd server
@@ -112,11 +131,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install pyinstaller
+
+# Compile the standalone executable (output: dist/fitstats-server)
+pyinstaller --clean fitstats-server.spec
 ```
-
-# Compile standalone executable
-
-`pyinstaller --clean fitstats-engine.spec`
 
 #### Sidecar Naming Convention
 
@@ -124,15 +142,16 @@ Tauri requires sidecars to have a specific suffix based on the **target triple**
 
 Common names:
 
-- **Mac (Silicon):** `fitstats-engine-aarch64-apple-darwin`
-- **Mac (Intel):** `fitstats-engine-x86_64-apple-darwin`
-- **Linux:** `fitstats-engine-x86_64-unknown-linux-gnu`
-- **Windows:** `fitstats-engine-x86_64-pc-windows-msvc.exe`
+- **Mac (Apple Silicon):** `fitstats-server-aarch64-apple-darwin`
+- **Linux:** `fitstats-server-x86_64-unknown-linux-gnu`
+- **Windows:** `fitstats-server-x86_64-pc-windows-msvc.exe`
+
+Release installers are built only for these three targets. On an Intel Mac you can still run from source: use the `x86_64-apple-darwin` suffix for the binary name.
 
 ```bash
-# Example for Mac M1/M2/M3/M4:
+# Example for Linux (replace the suffix with your own target triple):
 mkdir -p ../client/src-tauri/bin
-cp dist/fitstats-engine ../client/src-tauri/bin/fitstats-engine-aarch64-apple-darwin
+cp dist/fitstats-server ../client/src-tauri/bin/fitstats-server-x86_64-unknown-linux-gnu
 ```
 
 ### 2. Run the Tauri App
@@ -173,4 +192,4 @@ If you are looking for older versions of the project:
 
 ## 📄 License
 
-Personal Use.
+Released under the [MIT License](LICENSE).

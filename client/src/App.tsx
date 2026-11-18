@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAppDispatch, useAppSelector } from "./store/store";
 import { fetchHealthData } from "./features/dashboard/dashboardSlice";
-import { SERVER_URL } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { Sidebar } from "./components/dashboard/Sidebar";
 import { OverviewView } from "./components/dashboard/views/OverviewView";
 import { TimelineView } from "./components/dashboard/views/TimelineView";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { DataGridView } from "./components/dashboard/views/DataGridView";
 import { BriefView } from "./components/dashboard/views/BriefView";
 import { SettingsModal } from "./components/dashboard/SettingsModal";
+import { EtlProgressBanner } from "./components/dashboard/EtlProgressBanner";
 import { Header } from "./components/dashboard/Header";
 import { LandingPage } from "./components/onboarding/LandingPage";
 import { isTauri } from "@tauri-apps/api/core";
@@ -17,7 +18,7 @@ import { exists, BaseDirectory } from "@tauri-apps/plugin-fs";
 
 function App() {
   const dispatch = useAppDispatch();
-  const { status } = useAppSelector((state) => state.dashboard);
+  const { status, filteredData } = useAppSelector((state) => state.dashboard);
   const [activeTab, setActiveTab] = useState("overview");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFirstRun, setIsFirstRun] = useState<boolean | null>(null); // null = checking
@@ -42,7 +43,7 @@ function App() {
             setIsFirstRun(true);
           }
         } else {
-          const resp = await fetch(`${SERVER_URL.API}/api/config`);
+          const resp = await apiFetch("/api/config");
           const configData = await resp.json();
           
           if (!configData || !configData.dob) {
@@ -78,7 +79,7 @@ function App() {
   };
 
   const renderContent = () => {
-    if (isFirstRun === null || (status === "loading" && !isFirstRun)) {
+    if (isFirstRun === null || (status === "loading" && !isFirstRun && filteredData.length === 0)) {
       return (
         <div className="min-h-screen bg-background flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
@@ -131,6 +132,8 @@ function App() {
               isSidebarOpen ? "md:ml-64" : "ml-0"
             )}
           >
+            {/* NoDataState draws its own progress when there is nothing to show */}
+            {filteredData.length > 0 && <EtlProgressBanner />}
             <div className="p-4 md:p-8 flex-1">
               {activeTab === "overview" && <OverviewView onAction={() => setIsSettingsOpen(true)} />}
               {activeTab === "timeline" && <TimelineView onAction={() => setIsSettingsOpen(true)} />}

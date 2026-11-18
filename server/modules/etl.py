@@ -1,5 +1,7 @@
 import glob
 import os
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 import pandas as pd
 import config
 from modules import parsers
@@ -40,6 +42,35 @@ def filter_by_date(df):
     return df
 
 
+# Parsers heavy enough (hundreds of large files) to be worth a process pool.
+# Decision (heart-rate speed-up): the min/max/avg BPM columns are kept, the
+# parser is rewritten without pandas and its files are parsed in parallel.
+# Skipping the source would drop these columns from dashboard_data.json.
+PARALLEL_PARSERS = (parsers.parse_heart_rate_intraday_summary,)
+MAX_WORKERS = 8
+
+
+def _safe_parse(parser_func, path):
+    """Run a parser on one file; return (chunk, error) so errors don't abort a batch."""
+    try:
+        return parser_func(path), None
+    except Exception as e:
+        return None, e
+
+
+def _parse_files(files, parser_func):
+    """Parse files in order, in a process pool for heavy parsers when it is worthwhile."""
+    work = partial(_safe_parse, parser_func)
+    workers = min(MAX_WORKERS, os.cpu_count() or 1)
+    if parser_func in PARALLEL_PARSERS and workers > 1 and len(files) > workers:
+        try:
+            with ProcessPoolExecutor(workers) as pool:
+                return list(pool.map(work, files, chunksize=4))
+        except Exception as e:
+            print(f"   Process pool unavailable ({e}); parsing sequentially.")
+    return [work(f) for f in files]
+
+
 def load_collection(folder_name, file_pattern, parser_func):
     """
     Scans a specific folder for files matching a pattern, parses them,
@@ -64,13 +95,11 @@ def load_collection(folder_name, file_pattern, parser_func):
     print(f"   Loading {len(files)} files for {file_pattern}...")
 
     frames = []
-    for f in files:
-        try:
-            chunk = parser_func(f)
-            if chunk is not None and not chunk.empty:
-                frames.append(chunk)
-        except Exception as e:
-            print(f"Error {f}: {e}")
+    for f, (chunk, error) in zip(files, _parse_files(files, parser_func)):
+        if error is not None:
+            print(f"Error {f}: {error}")
+        elif chunk is not None and not chunk.empty:
+            frames.append(chunk)
 
     if not frames:
         return pd.DataFrame()
@@ -89,32 +118,6 @@ def load_collection(folder_name, file_pattern, parser_func):
     return full_df
 
 
-def get_data_date_range():
-    """
-    Scans the data directory to find the earliest and latest available dates.
-    Uses 'calories-*.json' as the reliable anchor for date coverage.
-    """
-    search_path = os.path.join(
-        config.DATA_DIR, "Global Export Data", "calories-*.json")
-    files = glob.glob(search_path)
-    if not files:
-        return None, None
-
-    dates = []
-    for f in files:
-        try:
-            # Extract date from filename: calories-YYYY-MM-DD.json
-            date_part = os.path.basename(f).replace(
-                'calories-', '').replace('.json', '')
-            dates.append(pd.to_datetime(date_part))
-        except:
-            continue
-
-    if not dates:
-        return None, None
-    return min(dates).strftime('%Y-%m-%d'), max(dates).strftime('%Y-%m-%d')
-
-
 def merge_all_data(progress_callback=None):
     """
     Main ETL Orchestrator.
@@ -131,14 +134,9 @@ def merge_all_data(progress_callback=None):
     Returns:
         pd.DataFrame: The fully processed Master Dataset ready for analysis.
     """
-    # Auto-detect date range if not explicitly set
-    detected_start, detected_end = get_data_date_range()
-    if not config.START_DATE and detected_start:
-        config.START_DATE = detected_start
-    if not config.END_DATE and detected_end:
-        config.END_DATE = detected_end
-
-    date_str = f"{config.START_DATE} to {config.END_DATE}" if config.START_DATE else "All Time"
+    # START_DATE / END_DATE are applied only when explicitly set; the range of
+    # the data itself comes from the merged index, never from file names.
+    date_str = f"{config.START_DATE or 'first day'} to {config.END_DATE or 'last day'}"
     print(f"\n=== BUILDING MASTER DATASET ({date_str}) ===")
 
     # Define Loading Plan: (Folder, Pattern, Parser, Label)
@@ -208,11 +206,12 @@ def merge_all_data(progress_callback=None):
 
     master_df = filter_by_date(master_df)
 
-    # Fill NaNs for activity and sleep metrics (logical 0)
+    # Fill NaNs for activity metrics (logical 0). The zone_* and sleep_* columns
+    # are left out on purpose: a day without zone or sleep data must stay empty,
+    # not 0 (a 0-minute night would drag the 7-day sleep mean down).
     cols_zero = [
         'very_active_minutes', 'moderately_active_minutes', 'lightly_active_minutes', 'sedentary_minutes',
-        'calories_total', 'sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake',
-        'zone_out_of_range', 'zone_fat_burn', 'zone_cardio', 'zone_peak', 'zone_light',
+        'calories_total',
         'steps', 'distance', 'exercise_duration', 'exercise_calories', 'exercise_count'
     ]
     for c in cols_zero:
@@ -248,11 +247,3 @@ def export_to_json(df):
 
     export_df.to_json(output_path, orient='records')
     print(f"-> Dashboard JSON exported to: {output_path}")
-
-    # ALSO: If a 'dist' folder exists (production build), update it too!
-    # This ensures that even after a build, the dashboard remains fresh.
-    dist_dir = config.CLIENT_PUBLIC_DIR.replace("public", "dist")
-    if os.path.exists(dist_dir):
-        dist_path = os.path.join(dist_dir, "dashboard_data.json")
-        export_df.to_json(dist_path, orient='records')
-        print(f"-> Syncing to production build: {dist_path}")
