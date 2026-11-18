@@ -35,7 +35,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10
+          package_json_file: client/package.json # pnpm version comes from "packageManager"
           cache: true
           cache_dependency_path: client/pnpm-lock.yaml
 
@@ -59,6 +59,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install React dependencies
+        working-directory: ./client
+        run: pnpm install
+
+      - name: Run Linter (Guard)
+        working-directory: ./client
+        run: pnpm run lint
 
       - name: Build Python Sidecar (Server)
         working-directory: ./server
@@ -92,14 +100,6 @@ jobs:
           # Verify local copy
           ls -R client/src-tauri/bin/
 
-      - name: Install React dependencies
-        working-directory: ./client
-        run: pnpm install
-
-      - name: Run Linter (Guard)
-        working-directory: ./client
-        run: pnpm run lint
-
       - name: Sync version from package.json to tauri.conf.json
         shell: bash
         run: |
@@ -125,5 +125,18 @@ jobs:
             xattr -cr /Applications/FitStats.app
             ```
             *(Or drag the app into the terminal after typing `xattr -cr `)*
-          releaseDraft: false
+          releaseDraft: true # published by the publish-release job once every platform succeeded
           prerelease: false
+
+  publish-release:
+    # Runs only if every job of the build matrix succeeded; otherwise the release stays a draft.
+    needs: build-and-release
+    if: ${{ success() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"
