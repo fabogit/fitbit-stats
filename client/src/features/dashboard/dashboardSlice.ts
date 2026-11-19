@@ -7,7 +7,7 @@ import type { HealthRecord, DateRange } from "@/types/health";
 import { subMonths, parseISO, format } from "date-fns";
 import { isTauri } from "@tauri-apps/api/core";
 import { readTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, waitForServer } from "@/lib/api";
 
 interface DashboardState {
   data: HealthRecord[];
@@ -101,6 +101,8 @@ async function readDashboardData(): Promise<HealthRecord[]> {
 /** Files skipped by the last ETL run. Not essential: any failure means "none known". */
 async function readEtlWarnings(): Promise<EtlWarning[]> {
   try {
+    // The desktop sidecar may still be starting when the data is first read.
+    if (isTauri() && !(await waitForServer(undefined, 15_000))) return [];
     const resp = await apiFetch("/api/etl-warnings");
     if (!resp.ok) return [];
     const list: unknown = await resp.json();
