@@ -11,6 +11,8 @@ import { DataGridView } from "./components/dashboard/views/DataGridView";
 import { BriefView } from "./components/dashboard/views/BriefView";
 import { SettingsModal } from "./components/dashboard/SettingsModal";
 import { EtlProgressBanner } from "./components/dashboard/EtlProgressBanner";
+import { EtlWarningsBanner } from "./components/dashboard/EtlWarningsBanner";
+import { DataErrorState } from "./components/dashboard/DataErrorState";
 import { Header } from "./components/dashboard/Header";
 import { LandingPage } from "./components/onboarding/LandingPage";
 import { isTauri } from "@tauri-apps/api/core";
@@ -134,12 +136,19 @@ function App() {
           >
             {/* NoDataState draws its own progress when there is nothing to show */}
             {filteredData.length > 0 && <EtlProgressBanner />}
+            <EtlWarningsBanner />
             <div className="p-4 md:p-8 flex-1">
-              {activeTab === "overview" && <OverviewView onAction={() => setIsSettingsOpen(true)} />}
-              {activeTab === "timeline" && <TimelineView onAction={() => setIsSettingsOpen(true)} />}
-              {activeTab === "analytics" && <AnalyticsView onAction={() => setIsSettingsOpen(true)} />}
-              {activeTab === "brief" && <BriefView onAction={() => setIsSettingsOpen(true)} />}
-              {activeTab === "datagrid" && <DataGridView />}
+              {status === "failed" ? (
+                <DataErrorState onRecalculate={() => setIsSettingsOpen(true)} />
+              ) : (
+                <>
+                  {activeTab === "overview" && <OverviewView onAction={() => setIsSettingsOpen(true)} />}
+                  {activeTab === "timeline" && <TimelineView onAction={() => setIsSettingsOpen(true)} />}
+                  {activeTab === "analytics" && <AnalyticsView onAction={() => setIsSettingsOpen(true)} />}
+                  {activeTab === "brief" && <BriefView onAction={() => setIsSettingsOpen(true)} />}
+                  {activeTab === "datagrid" && <DataGridView />}
+                </>
+              )}
             </div>
           </main>
         </div>

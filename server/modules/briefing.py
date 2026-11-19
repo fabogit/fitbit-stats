@@ -38,7 +38,7 @@ def calculate_age(dob_str, target_date):
         age = target_date.year - dob.year - \
             ((target_date.month, target_date.day) < (dob.month, dob.day))
         return age
-    except:
+    except (ValueError, TypeError, OverflowError):
         return 0
 
 def load_data():
@@ -67,8 +67,9 @@ def load_metrics(target_date=None):
 
                 metrics["gender"] = sc.get("gender", "N/A")
                 metrics["height"] = sc.get("height", "N/A")
-        except:
-            pass
+        except (OSError, ValueError, AttributeError) as e:
+            # Unreadable or malformed profile file: the brief is still useful without it.
+            print(f"Could not read session_config.json ({type(e).__name__}); profile left blank.")
     return metrics
 
 def get_daily_brief(target_date_str=None):
@@ -85,7 +86,7 @@ def get_daily_brief(target_date_str=None):
                 # Find the closest preceding date
                 t_date = df.index[df.index <= t_date].max()
             latest_day = df.loc[t_date]
-        except:
+        except (ValueError, KeyError, TypeError):
             latest_day = df.iloc[-1]
             t_date = df.index[-1]
     else:

@@ -1,10 +1,14 @@
 import glob
+import json
 import os
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 import pandas as pd
 import config
 from modules import parsers
+
+
+WARNINGS_FILE = "etl_warnings.json"
 
 
 def filter_by_date(df):
@@ -24,7 +28,7 @@ def filter_by_date(df):
     if not isinstance(df.index, pd.DatetimeIndex):
         try:
             df.index = pd.to_datetime(df.index)
-        except:
+        except (ValueError, TypeError):
             return df
 
     mask = None
@@ -71,7 +75,19 @@ def _parse_files(files, parser_func):
     return [work(f) for f in files]
 
 
-def load_collection(folder_name, file_pattern, parser_func):
+def _skip_reason(error, path):
+    """Short, user-facing reason a file was skipped. Never contains a folder path."""
+    if isinstance(error, OSError) and error.strerror:
+        text = error.strerror
+    else:
+        text = str(error) or "no details"
+    for p in (path, os.path.dirname(path)):
+        if p:
+            text = text.replace(p, "")
+    return f"{type(error).__name__}: {' '.join(text.split())}"[:200]
+
+
+def load_collection(folder_name, file_pattern, parser_func, warnings=None):
     """
     Scans a specific folder for files matching a pattern, parses them,
     and aggregates them into a single DataFrame.
@@ -83,6 +99,9 @@ def load_collection(folder_name, file_pattern, parser_func):
         folder_name (str): Subfolder name within DATA_DIR.
         file_pattern (str): Glob pattern (e.g., "*.json").
         parser_func (function): Function to parse a single file into a DataFrame.
+        warnings (list, optional): Receives one {"file", "reason"} dict (file name
+            only, no folder) for every file that was skipped because it could not
+            be parsed.
 
     Returns:
         pd.DataFrame: Combined and sorted DataFrame for the specific metric.
@@ -97,7 +116,10 @@ def load_collection(folder_name, file_pattern, parser_func):
     frames = []
     for f, (chunk, error) in zip(files, _parse_files(files, parser_func)):
         if error is not None:
-            print(f"Error {f}: {error}")
+            reason = _skip_reason(error, f)
+            print(f"   Skipped {os.path.basename(f)}: {reason}")
+            if warnings is not None:
+                warnings.append({"file": os.path.basename(f), "reason": reason})
         elif chunk is not None and not chunk.empty:
             frames.append(chunk)
 
@@ -118,7 +140,7 @@ def load_collection(folder_name, file_pattern, parser_func):
     return full_df
 
 
-def merge_all_data(progress_callback=None):
+def merge_all_data(progress_callback=None, warnings=None):
     """
     Main ETL Orchestrator.
 
@@ -130,6 +152,8 @@ def merge_all_data(progress_callback=None):
 
     Args:
         progress_callback: Optional callable(pct, msg) for progress reporting.
+        warnings: Optional list; receives {"file", "reason"} for every file that
+            was skipped because it could not be parsed (see load_collection).
 
     Returns:
         pd.DataFrame: The fully processed Master Dataset ready for analysis.
@@ -185,7 +209,7 @@ def merge_all_data(progress_callback=None):
         pct = 10 + int((i / total) * 55)
         if progress_callback:
             progress_callback(pct, f"Loading {label}")
-        datasets.append(load_collection(folder, pattern, func))
+        datasets.append(load_collection(folder, pattern, func, warnings))
 
     if progress_callback:
         progress_callback(65, "Merging datasets")
@@ -247,3 +271,15 @@ def export_to_json(df):
 
     export_df.to_json(output_path, orient='records')
     print(f"-> Dashboard JSON exported to: {output_path}")
+
+
+def export_warnings(warnings):
+    """Writes the skipped-file warnings of the last run next to dashboard_data.json.
+
+    An empty list is written too, so a clean run clears the warnings of the
+    previous one.
+    """
+    os.makedirs(config.CLIENT_PUBLIC_DIR, exist_ok=True)
+    path = os.path.join(config.CLIENT_PUBLIC_DIR, WARNINGS_FILE)
+    with open(path, "w") as f:
+        json.dump(warnings, f)

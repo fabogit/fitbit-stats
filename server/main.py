@@ -82,7 +82,11 @@ def main():
 
     # 1. Load & Merge
     progress(10, "Loading and merging data files")
-    df = etl.merge_all_data(progress_callback=progress)
+    warnings = []
+    df = etl.merge_all_data(progress_callback=progress, warnings=warnings)
+    etl.export_warnings(warnings)
+    for w in warnings:
+        print(f"[main.py] WARNING: skipped {w['file']} ({w['reason']})", file=sys.stderr)
 
     if df is not None:
         # 2. Calculate Metrics

@@ -219,6 +219,20 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+def finished_event(status, message, warnings):
+    """Builds the etl_finished event.
+
+    `warning_count` and `warning_files` (file names only, never folders)
+    describe the files skipped during loading; they are 0 / [] on a clean run.
+    """
+    files = list(dict.fromkeys(w["file"] for w in warnings))
+    if warnings and status == "success":
+        shown = ", ".join(files[:5]) + (f" and {len(files) - 5} more" if len(files) > 5 else "")
+        message = f"{message} ({len(warnings)} file(s) skipped: {shown})"
+    return {"event": "etl_finished", "status": status, "message": message,
+            "warning_count": len(warnings), "warning_files": files}
+
+
 def run_etl_sync(payload, loop):
     """Runs the synchronous ETL by sending updates to the queue."""
     import config
@@ -237,9 +251,11 @@ def run_etl_sync(payload, loop):
             loop
         )
 
+    warnings = []
     try:
         progress(10, "Loading and merging data files")
-        df = etl.merge_all_data(progress_callback=progress)
+        df = etl.merge_all_data(progress_callback=progress, warnings=warnings)
+        etl.export_warnings(warnings)
 
         if df is not None:
             progress(70, "Calculating readiness metrics")
@@ -262,19 +278,19 @@ def run_etl_sync(payload, loop):
             progress(100, "Complete")
             asyncio.run_coroutine_threadsafe(
                 manager.broadcast(
-                    {"event": "etl_finished", "status": "success", "message": "ETL completed successfully"}),
+                    finished_event("success", "ETL completed successfully", warnings)),
                 loop
             )
         else:
             asyncio.run_coroutine_threadsafe(
                 manager.broadcast(
-                    {"event": "etl_finished", "status": "error", "message": "No valid data found."}),
+                    finished_event("error", "No valid data found.", warnings)),
                 loop
             )
     except Exception as e:
         asyncio.run_coroutine_threadsafe(
             manager.broadcast(
-                {"event": "etl_finished", "status": "error", "message": str(e)}),
+                finished_event("error", str(e), warnings)),
             loop
         )
 
@@ -331,6 +347,20 @@ async def get_config():
     return {}
 
 
+@app.get("/api/etl-warnings")
+async def get_etl_warnings():
+    """Files skipped by the last ETL run, as [{file, reason}]; empty when none or unknown."""
+    import config
+    from modules import etl
+    path = os.path.join(config.CLIENT_PUBLIC_DIR, etl.WARNINGS_FILE)
+    try:
+        with open(path, "r") as f:
+            warnings = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return warnings if isinstance(warnings, list) else []
+
+
 @app.delete("/api/clear")
 async def clear_data():
     """Erases session config and computed dashboard data to simulate a factory reset."""
@@ -340,7 +370,8 @@ async def clear_data():
     files_to_remove = [
         os.path.join(client_dir, "session_config.json"),
         os.path.join(client_dir, "dashboard_data.json"),
-        os.path.join(client_dir, "fitbit_analysis.csv")
+        os.path.join(client_dir, "fitbit_analysis.csv"),
+        os.path.join(client_dir, "etl_warnings.json"),
     ]
 
     cleared = []

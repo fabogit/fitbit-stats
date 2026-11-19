@@ -4,6 +4,17 @@ import pandas as pd
 import os
 
 
+def _read_csv(file_path):
+    """Read a CSV file; a file that cannot be read raises, it is never skipped silently.
+
+    The ETL catches the error per file and reports the file as a warning.
+    """
+    try:
+        return pd.read_csv(file_path)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as e:
+        raise ValueError(f"not a readable CSV file ({type(e).__name__})") from e
+
+
 def parse_resting_heart_rate(file_path):
     """
     Parses 'resting_heart_rate-YYYY-MM-DD.json'.
@@ -74,10 +85,7 @@ def parse_sleep_score_csv(file_path):
                       'deep_sleep_in_minutes', and 'restlessness'.
                       Aggregates multiple entries per day using max().
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     df.rename(columns={'timestamp': 'date'}, inplace=True)
     df['date'] = pd.to_datetime(
         df['date'], format='ISO8601', utc=True).dt.tz_convert(None).dt.normalize()
@@ -162,10 +170,7 @@ def parse_active_zones_csv(file_path):
     """
     Parses 'time_in_heart_rate_zone-YYYY-MM-DD.csv' (minute-by-minute logs).
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     if 'heart rate zone type' not in df.columns:
         return None
 
@@ -207,10 +212,7 @@ def parse_spo2_csv(file_path):
         pd.DataFrame: Indexed by 'date' with 'spo2_avg', 'spo2_min', 'spo2_max'.
                       Handles duplicates by averaging values.
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     df['date'] = pd.to_datetime(
         df['timestamp'], utc=True).dt.tz_convert(None).dt.normalize()
     df.rename(columns={'average_value': 'spo2_avg',
@@ -289,10 +291,7 @@ def parse_hrv_csv(file_path):
         pd.DataFrame: Indexed by 'date' with 'rmssd' (Root Mean Square of Successive Differences).
                       Higher rMSSD generally indicates better recovery.
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     if 'rmssd' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
@@ -312,10 +311,7 @@ def parse_stress_csv(file_path):
     Returns:
         pd.DataFrame: Indexed by 'date' with 'stress_score'.
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     df.columns = df.columns.str.strip()
     if 'DATE' not in df.columns or 'STRESS_SCORE' not in df.columns:
         return None
@@ -330,10 +326,7 @@ def parse_acwr_csv(file_path):
     """
     Parses 'cardio_acute_chronic_workload_ratio.csv'.
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     if 'ratio' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
@@ -346,10 +339,7 @@ def parse_vo2max_csv(file_path):
     """
     Parses 'demographic_vo2max.csv'.
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     if 'demographic vo2max' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
@@ -362,10 +352,7 @@ def parse_readiness_csv(file_path):
     """
     Parses 'daily_readiness.csv' to extract the true Fitbit Readiness Score.
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     if 'score' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
@@ -378,10 +365,7 @@ def parse_respiratory_rate_csv(file_path):
     """
     Parses 'daily_respiratory_rate.csv' for breath tracking.
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     if 'breaths per minute' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
@@ -394,10 +378,7 @@ def parse_skin_temperature_csv(file_path):
     """
     Parses 'daily_sleep_temperature_derivations.csv' and calculates the variation.
     """
-    try:
-        df = pd.read_csv(file_path)
-    except:
-        return None
+    df = _read_csv(file_path)
     if 'nightly temperature celsius' not in df.columns or 'baseline temperature celsius' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
