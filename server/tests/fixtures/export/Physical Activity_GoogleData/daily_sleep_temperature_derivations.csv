@@ -1,0 +1,8 @@
+timestamp,nightly temperature celsius,baseline temperature celsius,data source
+2024-03-28T00:00:00Z,34.5,33.8,Fitbit App
+2024-03-29T00:00:00Z,33.9,33.8,Fitbit App
+2024-03-30T00:00:00Z,34.0,33.8,Fitbit App
+2024-03-31T00:00:00Z,34.1,33.8,Fitbit App
+2024-04-01T00:00:00Z,34.2,33.8,Fitbit App
+2024-04-02T00:00:00Z,34.3,33.8,Fitbit App
+2024-04-03T00:00:00Z,34.4,33.8,Fitbit App
