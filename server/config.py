@@ -1,19 +1,44 @@
+"""Defaults read from the environment.
+
+Nothing here is state of a run: a run gets its values from an EtlConfig. The
+API and the command line read these defaults once, when they build one.
+"""
 import os
-import platform
 import sys
+from datetime import date
 
-# Base directory for data
-DATA_DIR = os.environ.get("DATA_DIR", "data")
+PROFILE_ENV = {
+    "dob": "USER_DOB",
+    "gender": "USER_GENDER",
+    "height": "USER_HEIGHT_CM",
+    "weight": "USER_WEIGHT_KG",
+}
 
-# Analysis timeframe
-START_DATE = os.environ.get("START_DATE", None)
-END_DATE = os.environ.get("END_DATE", None)
 
-# User Metrics (Mifflin-St Jeor) - MUST BE SET VIA API/CONFIG
-USER_HEIGHT_CM = int(os.environ.get("USER_HEIGHT_CM", 0))
-USER_WEIGHT_KG = float(os.environ.get("USER_WEIGHT_KG", 0.0))
-USER_DOB = os.environ.get("USER_DOB", "")
-USER_GENDER = os.environ.get("USER_GENDER", "")
+def default_data_dir() -> str:
+    """Folder with the export when nothing else says otherwise (DATA_DIR)."""
+    return os.environ.get("DATA_DIR", "data")
+
+
+def profile_values_from_env() -> dict:
+    """Biometrics set in the environment, as the keys of session_config.json.
+
+    Only the variables that are set appear; run_config.profile_from_mapping
+    turns the merged values into a Profile.
+    """
+    return {key: os.environ[name] for key, name in PROFILE_ENV.items() if os.environ.get(name)}
+
+
+def date_from_env(name: str) -> date | None:
+    """A YYYY-MM-DD date from an environment variable (START_DATE, END_DATE), if set."""
+    value = os.environ.get(name)
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"{name} must be a date in YYYY-MM-DD format") from None
+
 
 # Output paths
 if getattr(sys, 'frozen', False):

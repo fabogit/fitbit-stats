@@ -4,6 +4,7 @@ import multiprocessing
 import os
 import json
 import asyncio
+from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import List, Literal
@@ -14,10 +15,12 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import config
 from modules.briefing import get_daily_brief
+from modules.pipeline import NoDataError, run_pipeline
 from modules.run_config import (
     AGE_YEARS_MAX, AGE_YEARS_MIN, HEIGHT_CM_MAX, HEIGHT_CM_MIN, WEIGHT_KG_MAX, WEIGHT_KG_MIN,
-    Profile, age_on)
+    EtlConfig, Profile, age_on)
 
 # Change working directory so relative paths in config.py work correctly
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -224,15 +227,6 @@ def finished_event(status, message, warnings):
 
 def run_etl_sync(payload, loop):
     """Runs the synchronous ETL by sending updates to the queue."""
-    import config
-    from modules import etl, metrics
-
-    config.DATA_DIR = payload.data_path
-    config.USER_DOB = payload.dob.isoformat()
-    config.USER_HEIGHT_CM = payload.height
-    config.USER_WEIGHT_KG = payload.weight
-    config.USER_GENDER = payload.gender
-
     def progress(pct, msg):
         asyncio.run_coroutine_threadsafe(
             manager.broadcast(
@@ -240,53 +234,24 @@ def run_etl_sync(payload, loop):
             loop
         )
 
-    profile = Profile(dob=payload.dob, gender=payload.gender,
-                      height_cm=payload.height, weight_kg=payload.weight)
-    warnings = []
-    try:
-        progress(10, "Loading and merging data files")
-        start = date.fromisoformat(config.START_DATE) if config.START_DATE else None
-        end = date.fromisoformat(config.END_DATE) if config.END_DATE else None
-        df = etl.merge_all_data(config.DATA_DIR, start, end, progress_callback=progress,
-                                warnings=warnings)
-        etl.export_warnings(warnings, config.CLIENT_PUBLIC_DIR)
-
-        if df is not None:
-            progress(70, "Calculating readiness metrics")
-            df = metrics.calculate_readiness(df)
-
-            progress(75, "Calculating metabolic metrics")
-            df = metrics.calculate_metabolic_metrics(df, profile)
-
-            progress(80, "Calculating advanced metrics")
-            df = metrics.calculate_advanced_metrics(df)
-
-            progress(90, "Exporting analysis CSV")
-            # Required for BRIEFING module
-            df.to_csv(os.path.join(
-                config.CLIENT_PUBLIC_DIR, "fitbit_analysis.csv"))
-
-            progress(95, "Exporting dashboard JSON")
-            etl.export_to_json(df, config.CLIENT_PUBLIC_DIR)
-
-            progress(100, "Complete")
-            asyncio.run_coroutine_threadsafe(
-                manager.broadcast(
-                    finished_event("success", "ETL completed successfully", warnings)),
-                loop
-            )
-        else:
-            asyncio.run_coroutine_threadsafe(
-                manager.broadcast(
-                    finished_event("error", "No valid data found.", warnings)),
-                loop
-            )
-    except Exception as e:
+    def finish(status, message, warnings):
         asyncio.run_coroutine_threadsafe(
-            manager.broadcast(
-                finished_event("error", str(e), warnings)),
-            loop
-        )
+            manager.broadcast(finished_event(status, message, warnings)), loop)
+
+    cfg = EtlConfig(
+        data_dir=Path(payload.data_path),
+        output_dir=Path(config.CLIENT_PUBLIC_DIR),
+        profile=Profile(dob=payload.dob, gender=payload.gender,
+                        height_cm=payload.height, weight_kg=payload.weight),
+    )
+    try:
+        result = run_pipeline(cfg, progress)
+        finish("success", "ETL completed successfully", result.warnings)
+    except NoDataError as e:
+        finish("error", "No valid data found.", e.warnings)
+    except Exception as e:
+        logger.exception("ETL run failed")
+        finish("error", str(e), [])
 
 
 async def run_etl_task(payload):
@@ -299,7 +264,6 @@ async def run_etl_task(payload):
 @app.post("/api/start")
 async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
     """Saves biometric configurations and initiates the main ETL pipeline asynchronously via BackgroundTasks."""
-    import config
     # Save to session_config.json so the next launch can prefill the form
     session_config = {
         "dob": payload.dob.isoformat(),
@@ -333,7 +297,6 @@ async def websocket_status(websocket: WebSocket):
 @app.get("/api/config")
 async def get_config():
     """Retrieves the current user session configuration if it exists."""
-    import config
     config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
     if os.path.exists(config_path):
         with open(config_path, "r") as f:
@@ -344,7 +307,6 @@ async def get_config():
 @app.get("/api/etl-warnings")
 async def get_etl_warnings():
     """Files skipped by the last ETL run, as [{file, reason}]; empty when none or unknown."""
-    import config
     from modules import etl
     path = os.path.join(config.CLIENT_PUBLIC_DIR, etl.WARNINGS_FILE)
     try:
@@ -358,7 +320,6 @@ async def get_etl_warnings():
 @app.delete("/api/clear")
 async def clear_data():
     """Erases session config and computed dashboard data to simulate a factory reset."""
-    import config
     client_dir = config.CLIENT_PUBLIC_DIR
 
     files_to_remove = [

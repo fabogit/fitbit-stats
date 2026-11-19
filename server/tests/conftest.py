@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from modules import etl, metrics, parsers
-from modules.run_config import Profile
+from modules import parsers, pipeline
+from modules.run_config import EtlConfig, Profile
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -70,16 +70,20 @@ def make_profile():
 
 
 @pytest.fixture
-def run_pipeline():
-    """Merge the export and apply the three metric steps, like main.py and api.py.
+def make_config(tmp_path):
+    """make_config(data_dir, start=None, end=None, profile=DEFAULT_PROFILE) -> an EtlConfig.
 
-    NOTE: this repeats the call order used by main.py and api.py. Once the
-    pipeline refactor provides one shared pipeline function, replace the body
-    of this fixture with a call to it.
+    Outputs go to a folder of the test's tmp_path, never to the default folder.
     """
+    def _make(data_dir, start=None, end=None, profile=DEFAULT_PROFILE, output_dir=None):
+        return EtlConfig(data_dir=Path(data_dir), output_dir=Path(output_dir or tmp_path / "output"),
+                         profile=profile, start_date=start, end_date=end)
+    return _make
+
+
+@pytest.fixture
+def run_pipeline(make_config):
+    """Run the pipeline on an export and return the final DataFrame."""
     def _run(data_dir, start=None, end=None):
-        df = etl.merge_all_data(data_dir, start, end)
-        df = metrics.calculate_readiness(df)
-        df = metrics.calculate_metabolic_metrics(df, DEFAULT_PROFILE)
-        return metrics.calculate_advanced_metrics(df)
+        return pipeline.run_pipeline(make_config(data_dir, start, end)).df
     return _run

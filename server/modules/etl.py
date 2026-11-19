@@ -7,6 +7,7 @@ import pandas as pd
 from modules import parsers
 
 
+JSON_FILE = "dashboard_data.json"
 WARNINGS_FILE = "etl_warnings.json"
 
 
@@ -374,7 +375,7 @@ def merge_all_data(data_dir, start=None, end=None, progress_callback=None, warni
     return master_df
 
 
-def export_to_json(df, output_dir):
+def export_to_json(df, output_dir, filename=JSON_FILE):
     """
     Exports the processed Master DataFrame to a JSON file format suitable for the React Dashboard.
 
@@ -382,9 +383,10 @@ def export_to_json(df, output_dir):
 
     Args:
         df (pd.DataFrame): The Master Dataset to export.
-        output_dir (str | Path): Folder that receives dashboard_data.json.
+        output_dir (str | Path): Folder that receives the file.
+        filename (str): Name of the file (the pipeline writes a temporary name first).
     """
-    output_path = os.path.join(output_dir, "dashboard_data.json")
+    output_path = os.path.join(output_dir, filename)
     os.makedirs(output_dir, exist_ok=True)
 
     # Reset index to include 'date' as a column in the JSON
@@ -392,16 +394,15 @@ def export_to_json(df, output_dir):
     export_df['date'] = export_df['date'].dt.strftime('%Y-%m-%d')
 
     export_df.to_json(output_path, orient='records')
-    print(f"-> Dashboard JSON exported to: {output_path}")
 
 
-def export_warnings(warnings, output_dir):
+def export_warnings(warnings, output_dir, filename=WARNINGS_FILE):
     """Writes the skipped-file warnings of the last run next to dashboard_data.json.
 
     An empty list is written too, so a clean run clears the warnings of the
     previous one.
     """
     os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, WARNINGS_FILE)
+    path = os.path.join(output_dir, filename)
     with open(path, "w") as f:
         json.dump(warnings, f)
