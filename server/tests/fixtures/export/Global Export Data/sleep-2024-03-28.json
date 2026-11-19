@@ -1,0 +1,173 @@
+[
+ {
+  "logId": 10,
+  "dateOfSleep": "2024-03-28",
+  "type": "stages",
+  "levels": {
+   "summary": {
+    "deep": {
+     "count": 4,
+     "minutes": 60
+    },
+    "light": {
+     "count": 20,
+     "minutes": 240
+    },
+    "rem": {
+     "count": 6,
+     "minutes": 90
+    },
+    "wake": {
+     "count": 22,
+     "minutes": 30
+    }
+   }
+  }
+ },
+ {
+  "logId": 99,
+  "dateOfSleep": "2024-03-28",
+  "type": "classic",
+  "levels": {
+   "summary": {
+    "asleep": {
+     "count": 1,
+     "minutes": 20
+    },
+    "restless": {
+     "count": 1,
+     "minutes": 5
+    },
+    "awake": {
+     "count": 1,
+     "minutes": 3
+    }
+   }
+  }
+ },
+ {
+  "logId": 11,
+  "dateOfSleep": "2024-03-29",
+  "type": "stages",
+  "levels": {
+   "summary": {
+    "deep": {
+     "count": 4,
+     "minutes": 60
+    },
+    "light": {
+     "count": 20,
+     "minutes": 260
+    },
+    "rem": {
+     "count": 6,
+     "minutes": 90
+    },
+    "wake": {
+     "count": 22,
+     "minutes": 30
+    }
+   }
+  }
+ },
+ {
+  "logId": 13,
+  "dateOfSleep": "2024-03-31",
+  "type": "stages",
+  "levels": {
+   "summary": {
+    "deep": {
+     "count": 4,
+     "minutes": 60
+    },
+    "light": {
+     "count": 20,
+     "minutes": 300
+    },
+    "rem": {
+     "count": 6,
+     "minutes": 90
+    },
+    "wake": {
+     "count": 22,
+     "minutes": 30
+    }
+   }
+  }
+ },
+ {
+  "logId": 14,
+  "dateOfSleep": "2024-04-01",
+  "type": "stages",
+  "levels": {
+   "summary": {
+    "deep": {
+     "count": 4,
+     "minutes": 60
+    },
+    "light": {
+     "count": 20,
+     "minutes": 320
+    },
+    "rem": {
+     "count": 6,
+     "minutes": 90
+    },
+    "wake": {
+     "count": 22,
+     "minutes": 30
+    }
+   }
+  }
+ },
+ {
+  "logId": 15,
+  "dateOfSleep": "2024-04-02",
+  "type": "stages",
+  "levels": {
+   "summary": {
+    "deep": {
+     "count": 4,
+     "minutes": 60
+    },
+    "light": {
+     "count": 20,
+     "minutes": 340
+    },
+    "rem": {
+     "count": 6,
+     "minutes": 90
+    },
+    "wake": {
+     "count": 22,
+     "minutes": 30
+    }
+   }
+  }
+ },
+ {
+  "logId": 16,
+  "dateOfSleep": "2024-04-03",
+  "type": "stages",
+  "levels": {
+   "summary": {
+    "deep": {
+     "count": 4,
+     "minutes": 60
+    },
+    "light": {
+     "count": 20,
+     "minutes": 360
+    },
+    "rem": {
+     "count": 6,
+     "minutes": 90
+    },
+    "wake": {
+     "count": 22,
+     "minutes": 30
+    }
+   }
+  }
+ }
+]

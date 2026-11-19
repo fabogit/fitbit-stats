@@ -1,0 +1,26 @@
+[
+ {
+  "logId": 1,
+  "activityName": "Walk",
+  "startTime": "03/28/24 07:00:00",
+  "duration": 600000,
+  "calories": 100,
+  "averageHeartRate": 100
+ },
+ {
+  "logId": 2,
+  "activityName": "Run",
+  "startTime": "03/28/24 18:00:00",
+  "duration": 1800000,
+  "calories": 300,
+  "averageHeartRate": 150
+ },
+ {
+  "logId": 3,
+  "activityName": "Bike",
+  "startTime": "04/01/24 18:00:00",
+  "duration": 1200000,
+  "calories": 200,
+  "averageHeartRate": 100
+ }
+]
