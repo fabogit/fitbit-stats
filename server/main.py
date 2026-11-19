@@ -107,7 +107,9 @@ def main():
 
         # 4. Export
         progress(90, "Exporting analysis CSV")
-        df.to_csv("fitbit_analysis.csv")  # Required for BRIEFING module
+        # Required for BRIEFING module, which reads it from CLIENT_PUBLIC_DIR
+        os.makedirs(config.CLIENT_PUBLIC_DIR, exist_ok=True)
+        df.to_csv(os.path.join(config.CLIENT_PUBLIC_DIR, "fitbit_analysis.csv"))
 
         progress(95, "Exporting dashboard JSON")
         etl.export_to_json(df)
