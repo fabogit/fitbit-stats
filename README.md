@@ -169,6 +169,33 @@ pnpm tauri build
 
 ---
 
+### Running the CI Checks Locally
+
+Every pull request runs the same checks (`.github/workflows/ci.yml`). To run them on your machine:
+
+```bash
+# Client: lint and type check
+cd client
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm exec tsc -b --noEmit
+
+# Server: pinned dependencies, lint, tests (Python 3.14 as in CI)
+cd ../server
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+ruff check .
+python -m pytest
+
+# Desktop: Rust type check (needs the Linux WebKitGTK packages listed above).
+# Tauri's build script requires the sidecar file to exist; an empty placeholder is enough here.
+cd ../client/src-tauri
+mkdir -p bin && touch bin/fitstats-server-x86_64-unknown-linux-gnu   # use your own target triple
+cargo check --locked
+```
+
+`server/requirements.txt` and `server/requirements-dev.txt` pin exact versions. Bump them deliberately, in a pull request that passes CI.
+
 ## ☁️ CI/CD Workflow (GitHub Actions)
 
 This repository is equipped with a fully automated Release Pipeline designed to cross-compile the application for all major Operating Systems at once without needing physical hardware.

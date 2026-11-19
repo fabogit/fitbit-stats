@@ -1,7 +1,7 @@
-pandas
-matplotlib
-seaborn
-watchdog
-fastapi
-uvicorn
-websockets
+pandas==3.1.1
+matplotlib==3.11.2
+seaborn==0.13.2
+watchdog==7.0.0
+fastapi==0.162.0
+uvicorn==0.54.0
+websockets==17.4
