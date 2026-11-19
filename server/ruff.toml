@@ -1,5 +1,6 @@
-# Minimal lint rules: syntax errors, undefined/unused names and import placement.
-# Ruff's wider default set (bare except, blind except, import sorting, ...) is
-# deliberately not enabled yet: fixing it means changing exception handling.
+# Lint rules: syntax errors, undefined/unused names, import placement and the
+# pycodestyle E7 group (E722 forbids a bare `except:`, which also swallows
+# KeyboardInterrupt and SystemExit). Ruff's wider default set (blind except,
+# import sorting, ...) is deliberately not enabled yet.
 [lint]
-select = ["E4", "E9", "F"]
+select = ["E4", "E7", "E9", "F"]
