@@ -119,6 +119,8 @@ def parse_resting_heart_rate(file_path):
     Parses 'resting_heart_rate-YYYY-MM-DD.json'.
 
     Structure: Nested JSON where daily values are inside 'value' -> 'value'.
+    Entries without a date or with a 0 value, or whose 'value' is not an
+    object, are skipped.
 
     Args:
         file_path (str): Path to the JSON file.
@@ -127,11 +129,12 @@ def parse_resting_heart_rate(file_path):
         pd.DataFrame: A DataFrame indexed by 'date' with a 'resting_bpm' column.
                       Returns None if no valid records are found.
     """
-    with open(file_path, 'r') as f:
-        data = json.load(f)
+    data = _read_json(file_path)
     records = []
     for entry in data:
-        val_obj = entry.get('value', {})
+        val_obj = entry.get('value')
+        if not isinstance(val_obj, dict):
+            continue
         date_str = val_obj.get('date')
         bpm = val_obj.get('value')
         if date_str and bpm:
@@ -159,8 +162,7 @@ def parse_heart_rate_intraday(file_path):
     DataFrame and converting every timestamp. Output is identical to the old
     pandas implementation (avg_bpm rounded to one decimal).
     """
-    with open(file_path, 'r') as f:
-        data = json.load(f)
+    data = _read_json(file_path)
     if not data:
         return None
 
@@ -169,7 +171,10 @@ def parse_heart_rate_intraday(file_path):
     acc = {}
     for entry in data:
         dt = entry.get('dateTime')
-        bpm = entry.get('value', {}).get('bpm')
+        try:
+            bpm = entry['value']['bpm']
+        except (KeyError, TypeError, IndexError):
+            continue        # a sample without a BPM reading is skipped, not the whole file
         if not dt or not bpm:
             continue
         day = dt[:8]
@@ -258,8 +263,7 @@ def parse_sleep_stages(file_path):
     session; the ETL uses the logId to count it once when it combines a day
     found in two files, and drops every column that starts with an underscore.
     """
-    with open(file_path, 'r') as f:
-        data = json.load(f)
+    data = _read_json(file_path)
     records = []
     sessions = {}
     for entry in data:
@@ -308,8 +312,7 @@ def parse_exercise_json(file_path):
     session; the ETL uses the logId to count it once when it combines a day
     found in two files, and drops every column that starts with an underscore.
     """
-    with open(file_path, 'r') as f:
-        data = json.load(f)
+    data = _read_json(file_path)
     if not data:
         return None
     records = []

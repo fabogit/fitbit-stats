@@ -87,6 +87,21 @@ def test_weight_and_bmi_written_as_text_are_read_as_numbers(tmp_path):
     assert df.loc["2024-03-01"].tolist() == [80.0, 24.5]
 
 
+def test_heart_rate_sample_whose_value_is_not_an_object_is_skipped(tmp_path):
+    f = tmp_path / "heart_rate-2024-03-01.json"
+    f.write_text(json.dumps([{"dateTime": "03/01/24 08:00:00", "value": {"bpm": 60}},
+                             {"dateTime": "03/01/24 08:00:05", "value": 0},
+                             {"dateTime": "03/01/24 08:00:10", "value": {"bpm": 80}}]))
+    df = parsers.drop_helpers(parsers.parse(S["heart_rate"], str(f)))
+    assert df.loc["2024-03-01"].tolist() == [60, 80, 70.0]
+
+
+def test_resting_heart_rate_entry_whose_value_is_not_an_object_is_skipped(tmp_path):
+    f = tmp_path / "resting_heart_rate-2024-03-01.json"
+    f.write_text(json.dumps([{"value": 5}, {"value": {"date": "03/01/24", "value": 55}}]))
+    assert parsers.parse(S["resting_heart_rate"], str(f))["resting_bpm"].tolist() == [55]
+
+
 def test_stress_rows_without_data_are_dropped(tmp_path):
     f = tmp_path / "Stress Score.csv"
     f.write_text("DATE,STRESS_SCORE,STATUS\n2024-03-01T00:00:00,50,NO_DATA\n2024-03-02T00:00:00,60,READY\n")
