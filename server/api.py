@@ -15,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from modules.briefing import get_daily_brief
+from modules.run_config import (
+    AGE_YEARS_MAX, AGE_YEARS_MIN, HEIGHT_CM_MAX, HEIGHT_CM_MIN, WEIGHT_KG_MAX, WEIGHT_KG_MIN, age_on)
 
 # Change working directory so relative paths in config.py work correctly
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -130,20 +132,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
-
-
-# Biometric limits. Keep identical to client/src/lib/biometrics.ts (all bounds inclusive).
-HEIGHT_CM_MIN = 50
-HEIGHT_CM_MAX = 250
-WEIGHT_KG_MIN = 20
-WEIGHT_KG_MAX = 300
-AGE_YEARS_MIN = 5
-AGE_YEARS_MAX = 120
-
-
-def age_on(dob: date, today: date) -> int:
-    """Completed years between dob and today."""
-    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
 class ConfigPayload(BaseModel):
