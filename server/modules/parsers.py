@@ -124,6 +124,22 @@ def parse_heart_rate_intraday_summary(file_path):
     """
     Parses 'heart_rate-YYYY-MM-DD.json' to get Daily Min, Max, and Avg BPM.
 
+    Returns a DataFrame indexed by 'date' with 'min_bpm', 'max_bpm' and
+    'avg_bpm', or None when the file has no valid samples.
+    """
+    df = heart_rate_intraday_detail(file_path)
+    if df is None:
+        return None
+    return df[['min_bpm', 'max_bpm', 'avg_bpm']]
+
+
+def heart_rate_intraday_detail(file_path):
+    """
+    Same as parse_heart_rate_intraday_summary, plus two helper columns,
+    '_bpm_sum' and '_bpm_n' (sum and count of the day's samples in this file).
+    They let the ETL recompute the average of a day that is split across two
+    files; the ETL drops every column that starts with an underscore.
+
     This source is about 94% of the ETL time, so the ~33,000 samples per file
     are aggregated with plain dicts keyed by day instead of building a pandas
     DataFrame and converting every timestamp. Output is identical to the old
@@ -163,6 +179,8 @@ def parse_heart_rate_intraday_summary(file_path):
         'min_bpm': [acc[d][0] for d in days],
         'max_bpm': [acc[d][1] for d in days],
         'avg_bpm': [round(acc[d][2] / acc[d][3], 1) for d in days],
+        '_bpm_sum': [acc[d][2] for d in days],
+        '_bpm_n': [acc[d][3] for d in days],
     }, index=index)
 
 
@@ -257,9 +275,24 @@ def parse_sleep_json_detailed(file_path):
         pd.DataFrame: Indexed by 'date' with columns: 'sleep_deep', 'sleep_light',
                       'sleep_rem', 'sleep_awake'. Aggregates multiple sessions per day via sum().
     """
+    df = sleep_stages_detail(file_path)
+    if df is None:
+        return None
+    return df[['sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake']]
+
+
+def sleep_stages_detail(file_path):
+    """
+    Same as parse_sleep_json_detailed, plus a helper column '_sessions': for each
+    day, the list of (logId, deep, light, rem, awake) of its sessions in this
+    file. Consecutive export files can both contain the same session; the ETL
+    uses the logId to count it once when it combines a day found in two files,
+    and drops every column that starts with an underscore.
+    """
     with open(file_path, 'r') as f:
         data = json.load(f)
     records = []
+    sessions = {}
     for entry in data:
         date_str = entry.get('dateOfSleep')
         summary = entry.get('levels', {}).get('summary', {})
@@ -272,12 +305,17 @@ def parse_sleep_json_detailed(file_path):
                 'awake', {}).get('minutes', 0) + summary.get('restless', {}).get('minutes', 0)
             records.append({'date': date_str, 'sleep_deep': deep,
                            'sleep_light': light, 'sleep_rem': rem, 'sleep_awake': awake})
+            sessions.setdefault(date_str, []).append(
+                (entry.get('logId'), deep, light, rem, awake))
     if not records:
         return None
     df = pd.DataFrame(records)
     df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
     df.set_index('date', inplace=True)
-    return df.groupby('date').sum()
+    out = df.groupby('date').sum()
+    out['_sessions'] = pd.Series(
+        [sessions[d.strftime('%Y-%m-%d')] for d in out.index], index=out.index, dtype=object)
+    return out
 
 
 def parse_hrv_csv(file_path):
@@ -413,7 +451,18 @@ def parse_distance_json(file_path):
 
 
 def parse_exercise_json(file_path):
-    """Parses 'exercise-*.json'."""
+    """
+    Parses 'exercise-*.json'.
+
+    Returns a DataFrame indexed by 'date' with 'exercise_duration' (minutes),
+    'exercise_calories', 'exercise_count' and 'exercise_aef' (mean of
+    calories / average heart rate over the day's sessions that have a heart
+    rate), plus a helper column '_sessions': for each day, the list of
+    (logId, minutes, calories, 1, efficiency or None) of its sessions in this
+    file. Consecutive export files can both contain the same session; the ETL
+    uses the logId to count it once when it combines a day found in two files,
+    and drops every column that starts with an underscore.
+    """
     with open(file_path, 'r') as f:
         data = json.load(f)
     if not data:
@@ -426,25 +475,33 @@ def parse_exercise_json(file_path):
         dur_ms = entry.get('duration', 0)
         dur_min = dur_ms / 60000.0
         cals = entry.get('calories', 0)
-        
+
         recs = {
             'date': dt,
             'exercise_duration': dur_min,
             'exercise_calories': cals,
             'exercise_count': 1
         }
+        aef = None
         avg_hr = entry.get('averageHeartRate')
         if avg_hr and avg_hr > 0:
-            recs['exercise_aef'] = cals / avg_hr
-            
+            aef = cals / avg_hr
+            recs['exercise_aef'] = aef
+        recs['_session'] = (entry.get('logId'), dur_min, cals, 1, aef)
+
         records.append(recs)
-        
+
     if not records:
         return None
-        
+
     df = pd.DataFrame(records)
     df['date'] = pd.to_datetime(df['date'], format='%m/%d/%y %H:%M:%S').dt.normalize()
-    
+
+    sessions = {}
+    for day, session in zip(df['date'], df['_session']):
+        sessions.setdefault(day, []).append(session)
+    df = df.drop(columns='_session')
+
     aggs = {
         'exercise_duration': 'sum',
         'exercise_calories': 'sum',
@@ -455,6 +512,8 @@ def parse_exercise_json(file_path):
     else:
         df['exercise_aef'] = 0.0
         aggs['exercise_aef'] = 'mean'
-        
+
     stats = df.groupby('date').agg(aggs)
+    stats['_sessions'] = pd.Series(
+        [sessions[d] for d in stats.index], index=stats.index, dtype=object)
     return stats

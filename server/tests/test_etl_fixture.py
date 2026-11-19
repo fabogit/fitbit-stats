@@ -109,14 +109,27 @@ def test_load_collection_one_bad_file_keeps_the_others(configure_etl, tmp_path):
 
 
 def test_load_collection_overlapping_days_leave_one_row_per_day(configure_etl, tmp_path):
-    # Which of the two values survives is deliberately not checked.
+    # The same day in two calories files: the parts of the day add up.
     folder = tmp_path / GLOBAL
     folder.mkdir()
     for name, value in (("calories-2024-03-01.json", "10"), ("calories-2024-03-15.json", "20")):
         (folder / name).write_text(json.dumps([{"dateTime": "03/20/24 12:00:00", "value": value}]))
     configure_etl(tmp_path)
-    df = etl.load_collection(GLOBAL, "calories-*.json", parsers.parse_calories_intraday)
+    df = etl.load_collection(GLOBAL, "calories-*.json", parsers.parse_calories_intraday,
+                             combine=etl.RULES_CALORIES)
     assert dates(df) == ["2024-03-20"]
+    assert df["calories_total"].tolist() == [30.0]
+
+
+def test_load_collection_without_rules_keeps_the_last_file(configure_etl, tmp_path):
+    folder = tmp_path / GLOBAL
+    folder.mkdir()
+    # written in reverse name order on purpose
+    for name, value in (("calories-2024-03-15.json", "20"), ("calories-2024-03-01.json", "10")):
+        (folder / name).write_text(json.dumps([{"dateTime": "03/20/24 12:00:00", "value": value}]))
+    configure_etl(tmp_path)
+    df = etl.load_collection(GLOBAL, "calories-*.json", parsers.parse_calories_intraday)
+    assert df["calories_total"].tolist() == [20.0]
 
 
 # --- merge_all_data on the full export ---
