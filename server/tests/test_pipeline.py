@@ -9,7 +9,7 @@ import pytest
 from modules import etl, pipeline
 from modules.pipeline import NoDataError
 
-OUTPUTS = ("fitbit_analysis.csv", "dashboard_data.json", "etl_warnings.json")
+OUTPUTS = ("fitbit_analysis.csv", "dashboard_data.json")
 
 
 def snapshot(folder):
@@ -24,13 +24,12 @@ def previous_run(make_config, export_dir, tmp_path):
     return cfg.output_dir, snapshot(cfg.output_dir)
 
 
-def test_writes_the_three_outputs_and_nothing_else(make_config, export_dir):
+def test_writes_the_two_outputs_and_nothing_else(make_config, export_dir):
     cfg = make_config(export_dir)
     result = pipeline.run_pipeline(cfg)
     assert sorted(p.name for p in cfg.output_dir.iterdir()) == sorted(OUTPUTS)
     rows = json.loads((cfg.output_dir / "dashboard_data.json").read_text())
     assert [r["date"] for r in rows] == [d.strftime("%Y-%m-%d") for d in result.df.index]
-    assert json.loads((cfg.output_dir / "etl_warnings.json").read_text()) == []
 
 
 def test_creates_a_missing_output_folder(make_config, export_dir, tmp_path):
@@ -68,7 +67,7 @@ def test_date_range_and_profile_come_from_the_config(make_config, export_dir):
     assert (no_profile["bmr"] == 0).all() and (no_profile["active_calories"] == 0).all()
 
 
-def test_warnings_are_returned_and_written(make_config, tmp_path):
+def test_warnings_are_returned_and_collected_in_the_callers_list(make_config, tmp_path):
     data = tmp_path / "data"
     folder = data / "Global Export Data"
     folder.mkdir(parents=True)
@@ -78,8 +77,28 @@ def test_warnings_are_returned_and_written(make_config, tmp_path):
     cfg = make_config(data)
     result = pipeline.run_pipeline(cfg)
     assert [w["file"] for w in result.warnings] == ["steps-2024-01-01.json"]
-    written = json.loads((cfg.output_dir / "etl_warnings.json").read_text())
-    assert written == result.warnings
+    assert not (cfg.output_dir / "etl_warnings.json").exists()
+    mine = []
+    assert pipeline.run_pipeline(cfg, warnings=mine).warnings is mine
+    assert [w["file"] for w in mine] == ["steps-2024-01-01.json"]
+
+
+def test_warnings_found_before_a_failure_stay_in_the_callers_list(make_config, tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    folder = data / "Global Export Data"
+    folder.mkdir(parents=True)
+    rows = [{"dateTime": f"01/{d:02d}/24 12:00:00", "value": "10"} for d in range(1, 4)]
+    (folder / "calories-2024-01-01.json").write_text(json.dumps(rows))
+    (folder / "steps-2024-01-01.json").write_text("{ not json")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("metrics failed")
+
+    monkeypatch.setattr(pipeline.metrics, "calculate_readiness", boom)
+    mine = []
+    with pytest.raises(RuntimeError):
+        pipeline.run_pipeline(make_config(data), warnings=mine)
+    assert [w["file"] for w in mine] == ["steps-2024-01-01.json"]
 
 
 # --- no data: the outputs of the previous run stay as they are ---

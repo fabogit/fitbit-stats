@@ -16,7 +16,8 @@ from modules.run_config import EtlConfig
 ProgressFn = Callable[[int, str], None]
 
 CSV_FILE = "fitbit_analysis.csv"
-OUTPUT_FILES = (CSV_FILE, etl.JSON_FILE, etl.WARNINGS_FILE)
+# Moved into place in this order: the dashboard data, which the app reads, goes last.
+OUTPUT_FILES = (CSV_FILE, etl.JSON_FILE)
 
 # A temporary file of an interrupted run is removed by the next run once it is
 # this old; a younger one may belong to a run that is still writing.
@@ -66,13 +67,18 @@ def _replace(src: Path, dst: Path) -> None:
             time.sleep(REPLACE_DELAY_SECONDS)
 
 
-def run_pipeline(cfg: EtlConfig, progress: ProgressFn | None = None) -> PipelineResult:
-    """Merges the export, computes the metrics and writes the three output files.
+def run_pipeline(cfg: EtlConfig, progress: ProgressFn | None = None,
+                 warnings: list[dict] | None = None) -> PipelineResult:
+    """Merges the export, computes the metrics and writes the two output files.
 
-    The files (fitbit_analysis.csv, dashboard_data.json, etl_warnings.json) go
-    to cfg.output_dir. Each is written under a temporary name first and moved
-    into place only once all of them are complete, so a failed or interrupted
-    run leaves the files of the previous run untouched.
+    The files (fitbit_analysis.csv, dashboard_data.json) go to cfg.output_dir.
+    Each is written under a temporary name first and moved into place only once
+    both are complete, so a failed or interrupted run leaves the files of the
+    previous run untouched.
+
+    The skipped files are collected in `warnings` (a new list when not given)
+    as they are found, so a caller that passes its own list still has them if
+    the run fails. They are also in the result.
 
     Raises NoDataError, without touching any output file, when the data folder
     gives no usable data.
@@ -82,7 +88,7 @@ def run_pipeline(cfg: EtlConfig, progress: ProgressFn | None = None) -> Pipeline
             progress(pct, msg)
 
     output_dir = Path(cfg.output_dir)
-    warnings: list[dict] = []
+    warnings = [] if warnings is None else warnings
 
     report(10, "Loading and merging data files")
     df = etl.merge_all_data(cfg.data_dir, cfg.start_date, cfg.end_date,
@@ -109,7 +115,6 @@ def run_pipeline(cfg: EtlConfig, progress: ProgressFn | None = None) -> Pipeline
 
         report(95, "Exporting dashboard JSON")
         etl.export_to_json(df, output_dir, filename=tmps[1].name)
-        etl.export_warnings(warnings, output_dir, filename=tmps[2].name)
 
         for tmp, final in zip(tmps, finals):
             _replace(tmp, final)

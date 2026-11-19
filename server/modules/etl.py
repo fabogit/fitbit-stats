@@ -1,5 +1,4 @@
 import glob
-import json
 import os
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
@@ -8,7 +7,6 @@ from modules import parsers
 
 
 JSON_FILE = "dashboard_data.json"
-WARNINGS_FILE = "etl_warnings.json"
 
 
 def filter_by_date(df, start=None, end=None):
@@ -402,15 +400,3 @@ def export_to_json(df, output_dir, filename=JSON_FILE):
     export_df['date'] = export_df['date'].dt.strftime('%Y-%m-%d')
 
     export_df.to_json(output_path, orient='records')
-
-
-def export_warnings(warnings, output_dir, filename=WARNINGS_FILE):
-    """Writes the skipped-file warnings of the last run next to dashboard_data.json.
-
-    An empty list is written too, so a clean run clears the warnings of the
-    previous one.
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, filename)
-    with open(path, "w") as f:
-        json.dump(warnings, f)

@@ -33,6 +33,8 @@ def test_request_without_token_is_rejected(client, with_token):
     assert client.get("/api/config").status_code in (401, 403)
     assert client.post("/api/brief", json={}).status_code in (401, 403)
     assert client.delete("/api/clear").status_code in (401, 403)
+    assert client.get("/api/status").status_code in (401, 403)
+    assert client.post("/api/start", json={}).status_code in (401, 403)
 
 
 def test_request_with_wrong_token_is_rejected(client, with_token):
@@ -42,6 +44,27 @@ def test_request_with_wrong_token_is_rejected(client, with_token):
 
 def test_request_with_token_is_accepted(client, with_token):
     assert client.get("/api/config", headers=auth()).status_code == 200
+
+
+def test_status_needs_the_token(client, with_token):
+    assert client.get("/api/status").status_code == 401
+    assert client.get("/api/status", headers=auth("x" * 64)).status_code == 401
+    r = client.get("/api/status", headers=auth())
+    assert r.status_code == 200 and r.json()["state"] == "idle"
+
+
+def test_status_works_without_token_when_variable_unset(client, no_token):
+    assert client.get("/api/status").status_code == 200
+
+
+def test_status_from_unlisted_origin_gets_no_cors_permission(client, no_token):
+    r = client.get("/api/status", headers={"Origin": OTHER_ORIGIN})
+    assert "access-control-allow-origin" not in r.headers
+
+
+def test_status_is_readable_by_an_app_origin(client, no_token):
+    r = client.get("/api/status", headers={"Origin": APP_ORIGIN})
+    assert r.headers["access-control-allow-origin"] == APP_ORIGIN
 
 
 def test_health_is_open_and_minimal(client, with_token):
@@ -128,6 +151,7 @@ def test_websocket_with_token_is_accepted(client, with_token):
     with client.websocket_connect(
             "/ws/status", subprotocols=["fitstats", "token." + TOKEN]) as ws:
         assert ws.accepted_subprotocol == "fitstats"
+        assert ws.receive_json()["state"] == "idle"
         ws.send_text("ping")
 
 

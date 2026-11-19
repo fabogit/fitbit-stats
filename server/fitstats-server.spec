@@ -12,7 +12,7 @@ a = Analysis(
         'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan', 'uvicorn.lifespan.on',
         'modules.briefing', 'modules.etl', 'modules.metrics', 'modules.parsers',
-        'modules.pipeline', 'modules.run_config'
+        'modules.pipeline', 'modules.run_config', 'jobs'
     ],
     hookspath=[],
     hooksconfig={},

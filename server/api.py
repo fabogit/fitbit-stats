@@ -4,7 +4,6 @@ import multiprocessing
 import os
 import json
 import asyncio
-import threading
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import date
@@ -12,13 +11,14 @@ from typing import List, Literal
 
 import uvicorn
 from pydantic import BaseModel, Field, field_validator
-from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import config
+from jobs import LAST_RUN_FILE, JobBusy, JobManager, JobSnapshot
 from modules.briefing import get_daily_brief
-from modules.pipeline import NoDataError, run_pipeline
+from modules.pipeline import run_pipeline
 from modules.run_config import (
     AGE_YEARS_MAX, AGE_YEARS_MIN, HEIGHT_CM_MAX, HEIGHT_CM_MIN, WEIGHT_KG_MAX, WEIGHT_KG_MIN,
     EtlConfig, Profile, age_on)
@@ -122,6 +122,7 @@ async def lifespan(_app):
         logger.info("API access token required (per-launch token is set).")
     else:
         logger.info("No API access token configured: requests are not token-protected.")
+    job_manager.load()
     yield
 
 
@@ -190,55 +191,89 @@ async def check_path(path: str):
 
 
 class ConnectionManager:
+    """The open status WebSockets, and the way to reach them from the run thread."""
+
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self._tasks: set = set()
 
     async def connect(self, websocket: WebSocket, subprotocol: str = None):
+        """Accepts the connection and sends it the current snapshot.
+
+        The connection is registered before the snapshot is read: a change that
+        happens in between reaches it as a broadcast, and a snapshot that
+        arrives out of order is dropped by the client through its `seq`.
+        """
         await websocket.accept(subprotocol=subprotocol)
+        self.loop = asyncio.get_running_loop()
         self.active_connections.append(websocket)
+        await websocket.send_json(job_manager.snapshot().to_dict())
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
             except Exception:
-                pass
+                self.disconnect(connection)
+
+    def notify(self, snapshot: JobSnapshot) -> None:
+        """Sends a snapshot to every client. Safe to call from any thread."""
+        loop = self.loop
+        if loop is None or not self.active_connections:
+            return
+
+        def send():
+            task = loop.create_task(self.broadcast(snapshot.to_dict()))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+
+        try:
+            loop.call_soon_threadsafe(send)
+        except RuntimeError:
+            pass  # the loop is closed: nobody is left to tell
 
 
 manager = ConnectionManager()
 
 
-def finished_event(status, message, warnings):
-    """Builds the etl_finished event.
+def _run_pipeline(cfg, progress, warnings):
+    # Looked up at call time, so a test can replace api.run_pipeline.
+    return run_pipeline(cfg, progress, warnings)
 
-    `warning_count` and `warning_files` (file names only, never folders)
-    describe the files skipped during loading; they are 0 / [] on a clean run.
+
+def _last_run_path() -> Path:
+    return Path(config.CLIENT_PUBLIC_DIR) / LAST_RUN_FILE
+
+
+job_manager = JobManager(_run_pipeline, _last_run_path, on_change=manager.notify)
+
+
+def _save_session_config(payload: ConfigPayload) -> None:
+    """Saves the form values to session_config.json so the next launch can prefill the form."""
+    session_config = {
+        "dob": payload.dob.isoformat(),
+        "gender": payload.gender,
+        "height": payload.height,
+        "weight": payload.weight,
+        "data_path": payload.data_path
+    }
+    config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
+    with open(config_path, "w") as f:
+        json.dump(session_config, f)
+
+
+@app.post("/api/start", status_code=202)
+async def start_etl(payload: ConfigPayload):
+    """Starts an ETL run in the background and answers with the status of the job.
+
+    Answers 409, saving nothing and starting nothing, while another run is in
+    progress; the body then carries the status of that run.
     """
-    files = list(dict.fromkeys(w["file"] for w in warnings))
-    if warnings and status == "success":
-        shown = ", ".join(files[:5]) + (f" and {len(files) - 5} more" if len(files) > 5 else "")
-        message = f"{message} ({len(warnings)} file(s) skipped: {shown})"
-    return {"event": "etl_finished", "status": status, "message": message,
-            "warning_count": len(warnings), "warning_files": files}
-
-
-def run_etl_sync(payload, loop):
-    """Runs the synchronous ETL by sending updates to the queue."""
-    def progress(pct, msg):
-        asyncio.run_coroutine_threadsafe(
-            manager.broadcast(
-                {"event": "etl_progress", "step": msg, "progress": pct}),
-            loop
-        )
-
-    def finish(status, message, warnings):
-        asyncio.run_coroutine_threadsafe(
-            manager.broadcast(finished_event(status, message, warnings)), loop)
-
     cfg = EtlConfig(
         data_dir=Path(payload.data_path),
         output_dir=Path(config.CLIENT_PUBLIC_DIR),
@@ -246,72 +281,32 @@ def run_etl_sync(payload, loop):
                         height_cm=payload.height, weight_kg=payload.weight),
     )
     try:
-        result = run_pipeline(cfg, progress)
-        finish("success", "ETL completed successfully", result.warnings)
-    except NoDataError as e:
-        finish("error", "No valid data found.", e.warnings)
-    except Exception as e:
-        logger.exception("ETL run failed")
-        finish("error", str(e), [])
+        snapshot = job_manager.start(cfg, prepare=lambda: _save_session_config(payload))
+    except JobBusy as busy:
+        return JSONResponse(
+            {"detail": "An ETL run is already in progress", "job": busy.snapshot.to_dict()},
+            status_code=409)
+    return snapshot.to_dict()
 
 
-# Held from the moment POST /api/start accepts a run until that run has ended,
-# so a second start is refused instead of overlapping the first.
-etl_run_lock = threading.Lock()
-
-
-async def run_etl_task(payload):
-    """Starts the synchronous execution of the ETL in a separate thread.
-
-    Releases etl_run_lock, taken by start_etl, whatever the outcome.
-    """
-    try:
-        await manager.broadcast({"event": "etl_progress", "step": "Starting ETL engine...", "progress": 0})
-        loop = asyncio.get_running_loop()
-        await asyncio.to_thread(run_etl_sync, payload, loop)
-    finally:
-        etl_run_lock.release()
-
-
-@app.post("/api/start")
-async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
-    """Saves biometric configurations and initiates the main ETL pipeline asynchronously via BackgroundTasks.
-
-    Answers 409, saving nothing and starting nothing, while another run is in progress.
-    """
-    if not etl_run_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="An ETL run is already in progress")
-    try:
-        # Save to session_config.json so the next launch can prefill the form
-        session_config = {
-            "dob": payload.dob.isoformat(),
-            "gender": payload.gender,
-            "height": payload.height,
-            "weight": payload.weight,
-            "data_path": payload.data_path
-        }
-        config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
-        with open(config_path, "w") as f:
-            json.dump(session_config, f)
-    except BaseException:
-        etl_run_lock.release()
-        raise
-
-    # Run ETL logic internally without subprocesses
-    background_tasks.add_task(run_etl_task, payload)
-    return {"status": "accepted", "message": "ETL process started in background"}
+@app.get("/api/status")
+async def get_status():
+    """Status of the ETL job: idle, running, finished or error, with progress and warnings."""
+    return job_manager.snapshot().to_dict()
 
 
 @app.websocket("/ws/status")
 async def websocket_status(websocket: WebSocket):
-    """Persistent channel to notify the client of the ETL status."""
+    """Sends the job snapshot on connection and again on every change."""
     offered = websocket.scope.get("subprotocols", [])
-    await manager.connect(websocket, WS_PROTOCOL if WS_PROTOCOL in offered else None)
     try:
+        await manager.connect(websocket, WS_PROTOCOL if WS_PROTOCOL in offered else None)
         while True:
             # Wait passively (keep-alive)
             await websocket.receive_text()
     except WebSocketDisconnect:
+        pass
+    finally:
         manager.disconnect(websocket)
 
 
@@ -325,40 +320,38 @@ async def get_config():
     return {}
 
 
-@app.get("/api/etl-warnings")
-async def get_etl_warnings():
-    """Files skipped by the last ETL run, as [{file, reason}]; empty when none or unknown."""
-    from modules import etl
-    path = os.path.join(config.CLIENT_PUBLIC_DIR, etl.WARNINGS_FILE)
-    try:
-        with open(path, "r") as f:
-            warnings = json.load(f)
-    except (OSError, ValueError):
-        return []
-    return warnings if isinstance(warnings, list) else []
-
-
 @app.delete("/api/clear")
 async def clear_data():
-    """Erases session config and computed dashboard data to simulate a factory reset."""
+    """Erases session config, computed dashboard data and the last run status (a factory reset).
+
+    Answers 409 and erases nothing while a run is in progress: it would write
+    its files again when it ends.
+    """
     client_dir = config.CLIENT_PUBLIC_DIR
 
     files_to_remove = [
         os.path.join(client_dir, "session_config.json"),
         os.path.join(client_dir, "dashboard_data.json"),
         os.path.join(client_dir, "fitbit_analysis.csv"),
-        os.path.join(client_dir, "etl_warnings.json"),
     ]
-
     cleared = []
-    for filepath in files_to_remove:
-        try:
-            if os.path.exists(filepath):
-                os.remove(filepath)
-                cleared.append(filepath)
-        except Exception as e:
-            print(f"Error removing {filepath}: {e}")
 
+    def erase():
+        for filepath in files_to_remove:
+            try:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                    cleared.append(filepath)
+            except Exception as e:
+                print(f"Error removing {filepath}: {e}")
+
+    try:
+        job_manager.reset(erase)
+    except JobBusy as busy:
+        return JSONResponse(
+            {"detail": "A calculation is running. Wait for it to finish before deleting data.",
+             "job": busy.snapshot.to_dict()},
+            status_code=409)
     return {"status": "ok", "cleared": cleared}
 
 
