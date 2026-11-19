@@ -10,7 +10,7 @@ import pytest
 
 import api
 from jobs import JobManager
-from modules import parsers, pipeline
+from modules import load_plan, parsers, pipeline
 from modules.run_config import EtlConfig, Profile
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -20,6 +20,9 @@ DEFAULT_PROFILE = Profile(dob=date(1984, 3, 28), gender="male", height_cm=180, w
 
 # One entry per source: key -> parser function. Adapt this table, not the
 # individual tests, if the parsers are ever reorganised.
+# The sources of the load plan, by key (their combine rules are S[key].rules).
+S = load_plan.SOURCES
+
 PARSERS = {
     "resting_heart_rate": parsers.parse_resting_heart_rate,
     "heart_rate": parsers.parse_heart_rate_intraday_summary,

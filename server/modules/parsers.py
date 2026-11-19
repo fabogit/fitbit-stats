@@ -1,7 +1,11 @@
 # backend/modules/parsers.py
 import json
+from typing import NamedTuple
+
 import pandas as pd
 import os
+
+from modules.sources import Source
 
 
 def _read_csv(file_path):
@@ -184,6 +188,19 @@ def heart_rate_intraday_detail(file_path):
     }, index=index)
 
 
+# Current export names (OUT_OF_RANGE, LIGHT, MODERATE, VIGOROUS) plus the
+# older FAT_BURN, CARDIO and PEAK, which are still accepted.
+ZONE_NAMES = {
+    'OUT_OF_RANGE': 'zone_out_of_range',
+    'LIGHT': 'zone_light',
+    'MODERATE': 'zone_moderate',
+    'VIGOROUS': 'zone_vigorous',
+    'FAT_BURN': 'zone_fat_burn',
+    'CARDIO': 'zone_cardio',
+    'PEAK': 'zone_peak',
+}
+
+
 def parse_active_zones_csv(file_path):
     """
     Parses 'time_in_heart_rate_zone-YYYY-MM-DD.csv' (minute-by-minute logs).
@@ -195,24 +212,12 @@ def parse_active_zones_csv(file_path):
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
 
     # Group by date and zone type, count minutes (each row is 1 min)
-    # Current export names (OUT_OF_RANGE, LIGHT, MODERATE, VIGOROUS) plus the
-    # older FAT_BURN, CARDIO and PEAK, which are still accepted.
-    zone_map = {
-        'OUT_OF_RANGE': 'zone_out_of_range',
-        'LIGHT': 'zone_light',
-        'MODERATE': 'zone_moderate',
-        'VIGOROUS': 'zone_vigorous',
-        'FAT_BURN': 'zone_fat_burn',
-        'CARDIO': 'zone_cardio',
-        'PEAK': 'zone_peak',
-    }
-
     # Pivot to get zones as columns
     pivot = df.groupby(['date', 'heart rate zone type']
                        ).size().unstack(fill_value=0)
 
     # Rename columns based on map
-    rename_cols = {col: zone_map.get(
+    rename_cols = {col: ZONE_NAMES.get(
         col, f"zone_{col.lower().replace(' ', '_')}") for col in pivot.columns}
     pivot = pivot.rename(columns=rename_cols)
 
@@ -281,13 +286,21 @@ def parse_sleep_json_detailed(file_path):
     return df[['sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake']]
 
 
+class SleepSession(NamedTuple):
+    log_id: object
+    deep: int
+    light: int
+    rem: int
+    awake: int
+
+
 def sleep_stages_detail(file_path):
     """
     Same as parse_sleep_json_detailed, plus a helper column '_sessions': for each
-    day, the list of (logId, deep, light, rem, awake) of its sessions in this
-    file. Consecutive export files can both contain the same session; the ETL
-    uses the logId to count it once when it combines a day found in two files,
-    and drops every column that starts with an underscore.
+    day, the list of SleepSession (logId, deep, light, rem, awake) of its
+    sessions in this file. Consecutive export files can both contain the same
+    session; the ETL uses the logId to count it once when it combines a day
+    found in two files, and drops every column that starts with an underscore.
     """
     with open(file_path, 'r') as f:
         data = json.load(f)
@@ -306,7 +319,7 @@ def sleep_stages_detail(file_path):
             records.append({'date': date_str, 'sleep_deep': deep,
                            'sleep_light': light, 'sleep_rem': rem, 'sleep_awake': awake})
             sessions.setdefault(date_str, []).append(
-                (entry.get('logId'), deep, light, rem, awake))
+                SleepSession(entry.get('logId'), deep, light, rem, awake))
     if not records:
         return None
     df = pd.DataFrame(records)
@@ -450,6 +463,14 @@ def parse_distance_json(file_path):
     return df.groupby('date')['value'].sum().reset_index().rename(columns={'value': 'distance'}).set_index('date')
 
 
+class ExerciseSession(NamedTuple):
+    log_id: object
+    duration: float
+    calories: float
+    count: int
+    aef: float | None
+
+
 def parse_exercise_json(file_path):
     """
     Parses 'exercise-*.json'.
@@ -458,10 +479,10 @@ def parse_exercise_json(file_path):
     'exercise_calories', 'exercise_count' and 'exercise_aef' (mean of
     calories / average heart rate over the day's sessions that have a heart
     rate), plus a helper column '_sessions': for each day, the list of
-    (logId, minutes, calories, 1, efficiency or None) of its sessions in this
-    file. Consecutive export files can both contain the same session; the ETL
-    uses the logId to count it once when it combines a day found in two files,
-    and drops every column that starts with an underscore.
+    ExerciseSession (logId, minutes, calories, 1, efficiency or None) of its
+    sessions in this file. Consecutive export files can both contain the same
+    session; the ETL uses the logId to count it once when it combines a day
+    found in two files, and drops every column that starts with an underscore.
     """
     with open(file_path, 'r') as f:
         data = json.load(f)
@@ -487,7 +508,7 @@ def parse_exercise_json(file_path):
         if avg_hr and avg_hr > 0:
             aef = cals / avg_hr
             recs['exercise_aef'] = aef
-        recs['_session'] = (entry.get('logId'), dur_min, cals, 1, aef)
+        recs['_session'] = ExerciseSession(entry.get('logId'), dur_min, cals, 1, aef)
 
         records.append(recs)
 
@@ -517,3 +538,8 @@ def parse_exercise_json(file_path):
     stats['_sessions'] = pd.Series(
         [sessions[d] for d in stats.index], index=stats.index, dtype=object)
     return stats
+
+
+def parser_for(source: Source):
+    """The function path -> DataFrame | None that reads one file of `source`."""
+    return source.reader.parse

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from conftest import S
 from modules import etl, parsers
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -107,7 +108,7 @@ def test_load_collection_overlapping_days_leave_one_row_per_day(tmp_path):
     for name, value in (("calories-2024-03-01.json", "10"), ("calories-2024-03-15.json", "20")):
         (folder / name).write_text(json.dumps([{"dateTime": "03/20/24 12:00:00", "value": value}]))
     df = etl.load_collection(tmp_path, GLOBAL, "calories-*.json", parsers.parse_calories_intraday,
-                             combine=etl.RULES_CALORIES)
+                             combine=S["calories"].rules)
     assert dates(df) == ["2024-03-20"]
     assert df["calories_total"].tolist() == [30.0]
 

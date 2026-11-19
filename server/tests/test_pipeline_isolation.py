@@ -96,7 +96,7 @@ def imports_config(source):
     return False
 
 
-@pytest.mark.parametrize("module", ["etl", "metrics", "parsers", "pipeline", "run_config"])
+@pytest.mark.parametrize("module", ["etl", "load_plan", "metrics", "parsers", "pipeline", "run_config", "sources"])
 def test_no_config_globals(module):
     assert not imports_config((SERVER / "modules" / f"{module}.py").read_text())
 
