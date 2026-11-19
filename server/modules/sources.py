@@ -118,6 +118,7 @@ class Source:
     pattern: str                 # glob pattern inside the folder
     reader: Reader
     columns: tuple[Column, ...]
+    other_columns: Agg = Agg.LAST    # combine rule of the columns not declared (unknown zones)
     parallel: bool = False       # parse the files in a process pool
 
     @property

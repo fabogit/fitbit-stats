@@ -11,6 +11,7 @@ from modules import etl, load_plan, parsers
 from modules.sources import Agg, CsvDaily, FromSessions, JsonDaily, Ratio, Special
 
 SERVER = Path(__file__).resolve().parent.parent
+ZONES = "Physical Activity_GoogleData"
 
 # The 22 progress messages, in order (the percentages follow from the count).
 LABELS = ["Resting heart rate", "Heart rate intraday", "Steps", "Distance", "Exercise sessions",
@@ -53,6 +54,8 @@ def test_parsers_give_the_declared_columns_on_the_fixture_export(export_dir):
             df = parsers.parser_for(s)(str(f))
             if df is None:
                 continue
+            extra = [c for c in df.columns if c not in {c.name for c in s.columns}]
+            assert not extra or s.other_columns is not Agg.LAST, (s.key, extra)
             required = [c.name for c in s.columns if c.required and not c.name.startswith("zone_")]
             assert set(required) <= set(df.columns), (s.key, f.name)
 
@@ -100,6 +103,15 @@ def test_resting_heart_rate_entry_whose_value_is_not_an_object_is_skipped(tmp_pa
     f = tmp_path / "resting_heart_rate-2024-03-01.json"
     f.write_text(json.dumps([{"value": 5}, {"value": {"date": "03/01/24", "value": 55}}]))
     assert parsers.parse(S["resting_heart_rate"], str(f))["resting_bpm"].tolist() == [55]
+
+
+def test_unknown_zone_split_across_files_is_summed(tmp_path):
+    folder = tmp_path / ZONES
+    folder.mkdir()
+    header = "timestamp,heart rate zone type\n"
+    (folder / "time_in_heart_rate_zone_2024-03-01.csv").write_text(header + "2024-03-20T10:00:00Z,NEW ZONE\n")
+    (folder / "time_in_heart_rate_zone_2024-03-20.csv").write_text(header + "2024-03-20T22:00:00Z,NEW ZONE\n")
+    assert etl.load_source(tmp_path, S["active_zones"])["zone_new_zone"].tolist() == [2]
 
 
 def test_stress_rows_without_data_are_dropped(tmp_path):

@@ -116,11 +116,11 @@ def _unique_sessions(groups):
     return unique
 
 
-def _combine_duplicate_days(df, rules):
+def _combine_duplicate_days(df, rules, default=Agg.LAST):
     """
     Reduce a frame with several rows per day (one per file the day appears in)
     to one row per day, with the rule of each column (Column.combine in the
-    load plan; a column without one keeps the last file's value).
+    load plan; `default` for columns without one).
 
     Days that appear once are returned untouched. Rows must be in file order
     (files sorted by name), which is what the LAST rule relies on.
@@ -134,7 +134,7 @@ def _combine_duplicate_days(df, rules):
     combined = {}
     sessions_by_day = None
     for col in multi.columns:
-        rule = rules.get(col, Agg.LAST)
+        rule = rules.get(col, default)
         match rule:
             case Agg.SUM:
                 combined[col] = grouped[col].sum(min_count=1)
@@ -169,7 +169,7 @@ def _combine_duplicate_days(df, rules):
 
 
 def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=None, combine=None,
-                    parallel=False):
+                    default=Agg.LAST, parallel=False):
     """
     Scans a specific folder for files matching a pattern, parses them,
     and aggregates them into a single DataFrame.
@@ -187,8 +187,9 @@ def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=N
             only, no folder) for every file that was skipped because it could not
             be parsed.
         combine (dict, optional): Rule per column for a day that appears in more
-            than one file (Source.rules); columns without a rule keep the value
-            of the last file in name order.
+            than one file (Source.rules); columns without a rule follow `default`
+            (by default the value of the last file in name order).
+        default (Agg): rule of the columns not in `combine` (Source.other_columns).
         parallel (bool): parse the files in a process pool (Source.parallel).
 
     Returns:
@@ -223,7 +224,7 @@ def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=N
 
     # A day can appear in several files (the export is split by date range):
     # combine its parts per column instead of dropping all but one.
-    full_df = _combine_duplicate_days(full_df, combine or {})
+    full_df = _combine_duplicate_days(full_df, combine or {}, default)
     full_df = full_df.drop(columns=[c for c in full_df.columns if str(c).startswith("_")])
 
     full_df = full_df.sort_index()
@@ -233,7 +234,7 @@ def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=N
 def load_source(data_dir, source, warnings=None):
     """load_collection for one source of the load plan."""
     return load_collection(data_dir, source.folder, source.pattern, parsers.parser_for(source),
-                           warnings, source.rules, parallel=source.parallel)
+                           warnings, source.rules, source.other_columns, source.parallel)
 
 
 def merge_all_data(data_dir, start=None, end=None, progress_callback=None, warnings=None):

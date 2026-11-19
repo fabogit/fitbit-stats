@@ -106,7 +106,7 @@ LOAD_PLAN: tuple[Source, ...] = (
                "nightly temperature celsius", "baseline temperature celsius")),)),
     Source("active_zones", "HR zones", GOOGLE, "time_in_heart_rate_zone_*.csv",
            Special(parsers.parse_active_zones_csv),
-           _summed(*parsers.ZONE_NAMES.values())),
+           _summed(*parsers.ZONE_NAMES.values()), other_columns=Agg.SUM),
 )
 
 SOURCES = {s.key: s for s in LOAD_PLAN}
