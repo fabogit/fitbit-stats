@@ -1,19 +1,9 @@
 import json
 
 import pandas as pd
-import pytest
 
-import config
 from modules import etl, metrics, parsers
 
-
-@pytest.fixture(autouse=True)
-def _restore_config():
-    saved = (config.DATA_DIR, config.START_DATE, config.END_DATE)
-    config.START_DATE = None
-    config.END_DATE = None
-    yield
-    config.DATA_DIR, config.START_DATE, config.END_DATE = saved
 
 
 def write_zone_file(path, minutes_by_day):
@@ -86,7 +76,6 @@ def test_etl_end_to_end_leaves_uncovered_days_empty(tmp_path):
     zdir.mkdir()
     write_zone_file(zdir / "time_in_heart_rate_zone_2024-03-01.csv",
                     {"2024-03-04": {"LIGHT": 10, "MODERATE": 4, "VIGOROUS": 2}})
-    config.DATA_DIR = str(tmp_path)
-    df = metrics.calculate_advanced_metrics(etl.merge_all_data())
+    df = metrics.calculate_advanced_metrics(etl.merge_all_data(tmp_path))
     assert df["trimp"].iloc[0] == 28
     assert df["trimp"].iloc[1:].isna().all()

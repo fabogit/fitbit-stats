@@ -242,8 +242,11 @@ def run_etl_sync(payload, loop):
     warnings = []
     try:
         progress(10, "Loading and merging data files")
-        df = etl.merge_all_data(progress_callback=progress, warnings=warnings)
-        etl.export_warnings(warnings)
+        start = date.fromisoformat(config.START_DATE) if config.START_DATE else None
+        end = date.fromisoformat(config.END_DATE) if config.END_DATE else None
+        df = etl.merge_all_data(config.DATA_DIR, start, end, progress_callback=progress,
+                                warnings=warnings)
+        etl.export_warnings(warnings, config.CLIENT_PUBLIC_DIR)
 
         if df is not None:
             progress(70, "Calculating readiness metrics")
@@ -261,7 +264,7 @@ def run_etl_sync(payload, loop):
                 config.CLIENT_PUBLIC_DIR, "fitbit_analysis.csv"))
 
             progress(95, "Exporting dashboard JSON")
-            etl.export_to_json(df)
+            etl.export_to_json(df, config.CLIENT_PUBLIC_DIR)
 
             progress(100, "Complete")
             asyncio.run_coroutine_threadsafe(

@@ -2,9 +2,7 @@ import filecmp
 import importlib.util
 from pathlib import Path
 
-import pytest
 
-import config
 from modules import etl
 
 GENERATOR = Path(__file__).resolve().parents[2] / "scripts" / "generate_sample_export.py"
@@ -17,14 +15,6 @@ def load_generator():
     spec.loader.exec_module(module)
     return module
 
-
-@pytest.fixture(autouse=True)
-def _restore_config():
-    saved = (config.DATA_DIR, config.START_DATE, config.END_DATE)
-    config.START_DATE = None
-    config.END_DATE = None
-    yield
-    config.DATA_DIR, config.START_DATE, config.END_DATE = saved
 
 
 def files_under(root):
@@ -54,8 +44,7 @@ def test_different_seed_changes_output(tmp_path):
 def test_etl_loads_generated_export(tmp_path):
     gen = load_generator()
     gen.generate(tmp_path, days=DAYS)
-    config.DATA_DIR = str(tmp_path)
-    df = etl.merge_all_data()
+    df = etl.merge_all_data(tmp_path)
     assert df is not None
     assert len(df) == DAYS
     assert df.index.min().strftime("%Y-%m-%d") == "2024-01-01"

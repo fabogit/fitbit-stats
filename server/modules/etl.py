@@ -4,21 +4,22 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 import pandas as pd
-import config
 from modules import parsers
 
 
 WARNINGS_FILE = "etl_warnings.json"
 
 
-def filter_by_date(df):
+def filter_by_date(df, start=None, end=None):
     """
-    Filters the DataFrame based on the configured START_DATE and optional END_DATE.
+    Keeps the rows between `start` and `end` (both inclusive, both optional).
 
     Ensures the DataFrame has a valid DatetimeIndex before applying the mask.
 
     Args:
         df (pd.DataFrame): The DataFrame to filter.
+        start (datetime.date, optional): First day to keep.
+        end (datetime.date, optional): Last day to keep.
 
     Returns:
         pd.DataFrame: A new DataFrame containing only rows within the date range.
@@ -31,15 +32,16 @@ def filter_by_date(df):
         except (ValueError, TypeError):
             return df
 
+    # A DatetimeIndex cannot be compared with a datetime.date (TypeError in pandas 2+).
     mask = None
-    if config.START_DATE:
-        mask = (df.index >= config.START_DATE)
+    if start:
+        mask = (df.index >= pd.Timestamp(start))
 
-    if config.END_DATE:
+    if end:
         if mask is not None:
-            mask = mask & (df.index <= config.END_DATE)
+            mask = mask & (df.index <= pd.Timestamp(end))
         else:
-            mask = (df.index <= config.END_DATE)
+            mask = (df.index <= pd.Timestamp(end))
 
     if mask is not None:
         return df.loc[mask]
@@ -197,7 +199,7 @@ def _combine_duplicate_days(df, rules):
     return combined if rest.empty else pd.concat([rest, combined])
 
 
-def load_collection(folder_name, file_pattern, parser_func, warnings=None, combine=None):
+def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=None, combine=None):
     """
     Scans a specific folder for files matching a pattern, parses them,
     and aggregates them into a single DataFrame.
@@ -207,7 +209,8 @@ def load_collection(folder_name, file_pattern, parser_func, warnings=None, combi
     order, so the result does not depend on the order the file system lists them.
 
     Args:
-        folder_name (str): Subfolder name within DATA_DIR.
+        data_dir (str | Path): Root folder of the export.
+        folder_name (str): Subfolder name within data_dir.
         file_pattern (str): Glob pattern (e.g., "*.json").
         parser_func (function): Function to parse a single file into a DataFrame.
         warnings (list, optional): Receives one {"file", "reason"} dict (file name
@@ -221,7 +224,7 @@ def load_collection(folder_name, file_pattern, parser_func, warnings=None, combi
         pd.DataFrame: Combined and sorted DataFrame for the specific metric, one
         row per day. Helper columns (names starting with "_") are removed.
     """
-    search_path = os.path.join(config.DATA_DIR, folder_name, file_pattern)
+    search_path = os.path.join(data_dir, folder_name, file_pattern)
     files = sorted(glob.glob(search_path))
     if not files:
         return pd.DataFrame()
@@ -256,7 +259,7 @@ def load_collection(folder_name, file_pattern, parser_func, warnings=None, combi
     return full_df
 
 
-def merge_all_data(progress_callback=None, warnings=None):
+def merge_all_data(data_dir, start=None, end=None, progress_callback=None, warnings=None):
     """
     Main ETL Orchestrator.
 
@@ -267,6 +270,9 @@ def merge_all_data(progress_callback=None, warnings=None):
     5. Performs final cleanup to remove empty or future rows based on calorie data.
 
     Args:
+        data_dir (str | Path): Root folder of the export.
+        start (datetime.date, optional): First day to keep (inclusive).
+        end (datetime.date, optional): Last day to keep (inclusive).
         progress_callback: Optional callable(pct, msg) for progress reporting.
         warnings: Optional list; receives {"file", "reason"} for every file that
             was skipped because it could not be parsed (see load_collection).
@@ -274,9 +280,9 @@ def merge_all_data(progress_callback=None, warnings=None):
     Returns:
         pd.DataFrame: The fully processed Master Dataset ready for analysis.
     """
-    # START_DATE / END_DATE are applied only when explicitly set; the range of
-    # the data itself comes from the merged index, never from file names.
-    date_str = f"{config.START_DATE or 'first day'} to {config.END_DATE or 'last day'}"
+    # start / end are applied only when explicitly set; the range of the data
+    # itself comes from the merged index, never from file names.
+    date_str = f"{start or 'first day'} to {end or 'last day'}"
     print(f"\n=== BUILDING MASTER DATASET ({date_str}) ===")
 
     # Define Loading Plan: (Folder, Pattern, Parser, Label[, duplicate-day rules])
@@ -329,7 +335,7 @@ def merge_all_data(progress_callback=None, warnings=None):
         pct = 10 + int((i / total) * 55)
         if progress_callback:
             progress_callback(pct, f"Loading {label}")
-        datasets.append(load_collection(folder, pattern, func, warnings, *rules))
+        datasets.append(load_collection(data_dir, folder, pattern, func, warnings, *rules))
 
     if progress_callback:
         progress_callback(65, "Merging datasets")
@@ -344,7 +350,7 @@ def merge_all_data(progress_callback=None, warnings=None):
     for i in range(1, len(datasets)):
         master_df = master_df.join(datasets[i], how='outer')
 
-    master_df = filter_by_date(master_df)
+    master_df = filter_by_date(master_df, start, end)
 
     # Fill NaNs for activity metrics (logical 0). The zone_* and sleep_* columns
     # are left out on purpose: a day without zone or sleep data must stay empty,
@@ -368,7 +374,7 @@ def merge_all_data(progress_callback=None, warnings=None):
     return master_df
 
 
-def export_to_json(df):
+def export_to_json(df, output_dir):
     """
     Exports the processed Master DataFrame to a JSON file format suitable for the React Dashboard.
 
@@ -376,10 +382,10 @@ def export_to_json(df):
 
     Args:
         df (pd.DataFrame): The Master Dataset to export.
+        output_dir (str | Path): Folder that receives dashboard_data.json.
     """
-    output_path = os.path.join(config.CLIENT_PUBLIC_DIR, "dashboard_data.json")
-    if not os.path.exists(config.CLIENT_PUBLIC_DIR):
-        os.makedirs(config.CLIENT_PUBLIC_DIR, exist_ok=True)
+    output_path = os.path.join(output_dir, "dashboard_data.json")
+    os.makedirs(output_dir, exist_ok=True)
 
     # Reset index to include 'date' as a column in the JSON
     export_df = df.reset_index()
@@ -389,13 +395,13 @@ def export_to_json(df):
     print(f"-> Dashboard JSON exported to: {output_path}")
 
 
-def export_warnings(warnings):
+def export_warnings(warnings, output_dir):
     """Writes the skipped-file warnings of the last run next to dashboard_data.json.
 
     An empty list is written too, so a clean run clears the warnings of the
     previous one.
     """
-    os.makedirs(config.CLIENT_PUBLIC_DIR, exist_ok=True)
-    path = os.path.join(config.CLIENT_PUBLIC_DIR, WARNINGS_FILE)
+    os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, WARNINGS_FILE)
     with open(path, "w") as f:
         json.dump(warnings, f)

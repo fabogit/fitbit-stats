@@ -1,12 +1,12 @@
 """ETL on the small synthetic export: filtering, loading, merging, full pipeline."""
 import json
+from datetime import date
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
-import config
 from modules import etl, parsers
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -35,47 +35,42 @@ def test_fixture_files_total_less_than_100_kb():
 
 # --- filter_by_date ---
 
-def test_filter_by_date_bounds_are_inclusive(configure_etl, tmp_path):
-    configure_etl(tmp_path, "2024-03-30", "2024-04-01")
-    assert dates(etl.filter_by_date(week())) == ["2024-03-30", "2024-03-31", "2024-04-01"]
+def test_filter_by_date_bounds_are_inclusive():
+    out = etl.filter_by_date(week(), date(2024, 3, 30), date(2024, 4, 1))
+    assert dates(out) == ["2024-03-30", "2024-03-31", "2024-04-01"]
 
 
-def test_filter_by_date_only_start_or_only_end(configure_etl, tmp_path):
-    configure_etl(tmp_path, start="2024-04-01")
-    assert dates(etl.filter_by_date(week())) == DAYS[4:]
-    configure_etl(tmp_path, end="2024-03-29")
-    assert dates(etl.filter_by_date(week())) == DAYS[:2]
+def test_filter_by_date_only_start_or_only_end():
+    assert dates(etl.filter_by_date(week(), start=date(2024, 4, 1))) == DAYS[4:]
+    assert dates(etl.filter_by_date(week(), end=date(2024, 3, 29))) == DAYS[:2]
 
 
-def test_filter_by_date_without_limits_keeps_everything(configure_etl, tmp_path):
-    configure_etl(tmp_path)
-    assert dates(etl.filter_by_date(week())) == DAYS
+def test_filter_by_date_without_limits_keeps_everything():
+    assert dates(etl.filter_by_date(week(), None, None)) == DAYS
 
 
-def test_filter_by_date_none_and_empty_pass_through(configure_etl, tmp_path):
-    configure_etl(tmp_path, "2024-03-30", None)
-    assert etl.filter_by_date(None) is None
+def test_filter_by_date_none_and_empty_pass_through():
+    start = date(2024, 3, 30)
+    assert etl.filter_by_date(None, start, None) is None
     empty = pd.DataFrame()
-    assert etl.filter_by_date(empty) is empty
+    assert etl.filter_by_date(empty, start, None) is empty
 
 
-def test_filter_by_date_accepts_a_string_index(configure_etl, tmp_path):
-    configure_etl(tmp_path, "2024-03-30", "2024-03-31")
+def test_filter_by_date_accepts_a_string_index():
     df = pd.DataFrame({"v": [1, 2, 3, 4]}, index=DAYS[:4])
-    assert dates(etl.filter_by_date(df)) == ["2024-03-30", "2024-03-31"]
+    out = etl.filter_by_date(df, date(2024, 3, 30), date(2024, 3, 31))
+    assert dates(out) == ["2024-03-30", "2024-03-31"]
 
 
-def test_filter_by_date_leaves_an_unparseable_index_alone(configure_etl, tmp_path):
-    configure_etl(tmp_path, "2024-03-30", None)
+def test_filter_by_date_leaves_an_unparseable_index_alone():
     df = pd.DataFrame({"v": [1, 2]}, index=["a", "b"])
-    assert etl.filter_by_date(df).index.tolist() == ["a", "b"]
+    assert etl.filter_by_date(df, date(2024, 3, 30), None).index.tolist() == ["a", "b"]
 
 
 # --- load_collection ---
 
-def test_load_collection_concatenates_files_in_date_order(configure_etl, export_dir):
-    configure_etl(export_dir)
-    df = etl.load_collection(GLOBAL, "calories-*.json", parsers.parse_calories_intraday)
+def test_load_collection_concatenates_files_in_date_order(export_dir):
+    df = etl.load_collection(export_dir, GLOBAL, "calories-*.json", parsers.parse_calories_intraday)
     assert df.index.is_monotonic_increasing
     # 7 days over two monthly files, plus one day with 0 calories in the April file
     assert dates(df) == DAYS + ["2024-04-05"]
@@ -83,61 +78,55 @@ def test_load_collection_concatenates_files_in_date_order(configure_etl, export_
     assert df.loc["2024-04-05", "calories_total"] == 0.0
 
 
-def test_load_collection_strips_timezones(configure_etl, export_dir):
-    configure_etl(export_dir)
-    df = etl.load_collection(GOOGLE, "time_in_heart_rate_zone_*.csv", parsers.parse_active_zones_csv)
+def test_load_collection_strips_timezones(export_dir):
+    df = etl.load_collection(export_dir, GOOGLE, "time_in_heart_rate_zone_*.csv", parsers.parse_active_zones_csv)
     assert df.index.tz is None
     assert dates(df) == [DAYS[i] for i in (0, 1, 2, 4, 5, 6)]
 
 
-def test_load_collection_without_files_is_empty(configure_etl, tmp_path):
-    configure_etl(tmp_path)
-    assert etl.load_collection(GLOBAL, "steps-*.json", parsers.parse_steps_json).empty
+def test_load_collection_without_files_is_empty(tmp_path):
+    assert etl.load_collection(tmp_path, GLOBAL, "steps-*.json", parsers.parse_steps_json).empty
 
 
-def test_load_collection_one_bad_file_keeps_the_others(configure_etl, tmp_path):
+def test_load_collection_one_bad_file_keeps_the_others(tmp_path):
     folder = tmp_path / GLOBAL
     folder.mkdir()
     (folder / "steps-2024-03-01.json").write_text(
         json.dumps([{"dateTime": "03/01/24 09:00:00", "value": "100"}]))
     (folder / "steps-2024-04-01.json").write_text("{ not json")
-    configure_etl(tmp_path)
     warnings = []
-    df = etl.load_collection(GLOBAL, "steps-*.json", parsers.parse_steps_json, warnings)
+    df = etl.load_collection(tmp_path, GLOBAL, "steps-*.json", parsers.parse_steps_json, warnings)
     assert df["steps"].tolist() == [100.0]
     assert [w["file"] for w in warnings] == ["steps-2024-04-01.json"]
 
 
-def test_load_collection_overlapping_days_leave_one_row_per_day(configure_etl, tmp_path):
+def test_load_collection_overlapping_days_leave_one_row_per_day(tmp_path):
     # The same day in two calories files: the parts of the day add up.
     folder = tmp_path / GLOBAL
     folder.mkdir()
     for name, value in (("calories-2024-03-01.json", "10"), ("calories-2024-03-15.json", "20")):
         (folder / name).write_text(json.dumps([{"dateTime": "03/20/24 12:00:00", "value": value}]))
-    configure_etl(tmp_path)
-    df = etl.load_collection(GLOBAL, "calories-*.json", parsers.parse_calories_intraday,
+    df = etl.load_collection(tmp_path, GLOBAL, "calories-*.json", parsers.parse_calories_intraday,
                              combine=etl.RULES_CALORIES)
     assert dates(df) == ["2024-03-20"]
     assert df["calories_total"].tolist() == [30.0]
 
 
-def test_load_collection_without_rules_keeps_the_last_file(configure_etl, tmp_path):
+def test_load_collection_without_rules_keeps_the_last_file(tmp_path):
     folder = tmp_path / GLOBAL
     folder.mkdir()
     # written in reverse name order on purpose
     for name, value in (("calories-2024-03-15.json", "20"), ("calories-2024-03-01.json", "10")):
         (folder / name).write_text(json.dumps([{"dateTime": "03/20/24 12:00:00", "value": value}]))
-    configure_etl(tmp_path)
-    df = etl.load_collection(GLOBAL, "calories-*.json", parsers.parse_calories_intraday)
+    df = etl.load_collection(tmp_path, GLOBAL, "calories-*.json", parsers.parse_calories_intraday)
     assert df["calories_total"].tolist() == [20.0]
 
 
 # --- merge_all_data on the full export ---
 
 @pytest.fixture
-def merged(configure_etl, export_dir):
-    configure_etl(export_dir)
-    return etl.merge_all_data()
+def merged(export_dir):
+    return etl.merge_all_data(export_dir)
 
 
 EXPECTED_COLUMNS = {
@@ -214,9 +203,9 @@ def test_merge_across_two_months_covers_every_day(merged):
     assert len(merged) == 7
 
 
-def test_merge_respects_explicit_dates(configure_etl, export_dir):
-    configure_etl(export_dir, "2024-03-30", "2024-04-01")
-    assert dates(etl.merge_all_data()) == ["2024-03-30", "2024-03-31", "2024-04-01"]
+def test_merge_respects_explicit_dates(export_dir):
+    out = etl.merge_all_data(export_dir, date(2024, 3, 30), date(2024, 4, 1))
+    assert dates(out) == ["2024-03-30", "2024-03-31", "2024-04-01"]
 
 
 # --- the whole pipeline (merge + metrics) ---
@@ -258,10 +247,9 @@ def test_pipeline_golden_values(run_pipeline, export_dir):
 
 # --- export_to_json ---
 
-def test_export_to_json_dates_and_nulls(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "CLIENT_PUBLIC_DIR", str(tmp_path / "out"))
+def test_export_to_json_dates_and_nulls(tmp_path):
     df = pd.DataFrame({"steps": [100.0, NAN]}, index=pd.to_datetime(["2024-03-28", "2024-03-29"]))
     df.index.name = "date"
-    etl.export_to_json(df)
+    etl.export_to_json(df, tmp_path / "out")
     rows = json.loads((tmp_path / "out" / "dashboard_data.json").read_text())
     assert rows == [{"date": "2024-03-28", "steps": 100.0}, {"date": "2024-03-29", "steps": None}]

@@ -5,6 +5,7 @@ from modules import etl, metrics
 import config
 
 import json
+from datetime import date
 
 
 def load_session_config():
@@ -83,8 +84,10 @@ def main():
     # 1. Load & Merge
     progress(10, "Loading and merging data files")
     warnings = []
-    df = etl.merge_all_data(progress_callback=progress, warnings=warnings)
-    etl.export_warnings(warnings)
+    start = date.fromisoformat(config.START_DATE) if config.START_DATE else None
+    end = date.fromisoformat(config.END_DATE) if config.END_DATE else None
+    df = etl.merge_all_data(config.DATA_DIR, start, end, progress_callback=progress, warnings=warnings)
+    etl.export_warnings(warnings, config.CLIENT_PUBLIC_DIR)
     for w in warnings:
         print(f"[main.py] WARNING: skipped {w['file']} ({w['reason']})", file=sys.stderr)
 
@@ -112,7 +115,7 @@ def main():
         df.to_csv(os.path.join(config.CLIENT_PUBLIC_DIR, "fitbit_analysis.csv"))
 
         progress(95, "Exporting dashboard JSON")
-        etl.export_to_json(df)
+        etl.export_to_json(df, config.CLIENT_PUBLIC_DIR)
 
         progress(100, "Complete")
     else:

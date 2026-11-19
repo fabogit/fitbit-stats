@@ -58,16 +58,6 @@ def export_dir():
 
 
 @pytest.fixture
-def configure_etl(monkeypatch):
-    """Point the ETL at a data folder and an optional date range."""
-    def _configure(data_dir, start=None, end=None):
-        monkeypatch.setattr(config, "DATA_DIR", str(data_dir))
-        monkeypatch.setattr(config, "START_DATE", start)
-        monkeypatch.setattr(config, "END_DATE", end)
-    return _configure
-
-
-@pytest.fixture
 def set_profile(monkeypatch):
     """Set the user profile the metabolic metrics read (empty value = not set)."""
     def _set(gender="male", dob="1984-03-28", height=180, weight=75.0):
@@ -79,7 +69,7 @@ def set_profile(monkeypatch):
 
 
 @pytest.fixture
-def run_pipeline(configure_etl, set_profile):
+def run_pipeline(set_profile):
     """Merge the export and apply the three metric steps, like main.py and api.py.
 
     NOTE: this repeats the call order used by main.py and api.py. Once the
@@ -87,9 +77,8 @@ def run_pipeline(configure_etl, set_profile):
     of this fixture with a call to it.
     """
     def _run(data_dir, start=None, end=None):
-        configure_etl(data_dir, start, end)
         set_profile()
-        df = etl.merge_all_data()
+        df = etl.merge_all_data(data_dir, start, end)
         df = metrics.calculate_readiness(df)
         df = metrics.calculate_metabolic_metrics(df)
         return metrics.calculate_advanced_metrics(df)
