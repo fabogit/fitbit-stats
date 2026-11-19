@@ -78,16 +78,24 @@ def _parse_files(files, parser_func):
     return [work(f) for f in files]
 
 
-def _skip_reason(error, path):
-    """Short, user-facing reason a file was skipped. Never contains a folder path."""
+def describe_error(error, paths=()):
+    """Short, user-facing text for an exception. Never contains any of `paths`.
+
+    Used for the reason a file was skipped and for the message of a failed run.
+    """
     if isinstance(error, OSError) and error.strerror:
         text = error.strerror
     else:
         text = str(error) or "no details"
-    for p in (path, os.path.dirname(path)):
-        if p:
-            text = text.replace(p, "")
+    # Longest first: a folder is a prefix of the paths inside it.
+    for p in sorted({str(p) for p in paths if p}, key=len, reverse=True):
+        text = text.replace(p, "")
     return f"{type(error).__name__}: {' '.join(text.split())}"[:200]
+
+
+def _skip_reason(error, path):
+    """Short, user-facing reason a file was skipped. Never contains a folder path."""
+    return describe_error(error, (path, os.path.dirname(path)))
 
 
 # How the rows of the same day coming from different files of one source are
