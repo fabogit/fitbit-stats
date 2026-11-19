@@ -93,7 +93,10 @@ For users who prefer a web-based interface or home lab deployment, a full Docker
 
 - **Frontend (port 8080):** The web dashboard served by Nginx.
 - **API Server (port 8000):** The Python/FastAPI engine handling calculations.
-- **Engine Watcher:** A background service, always started by `docker-compose.yml`, that automatically triggers a re-calculate when files in the `data/` directory are modified.
+
+The stack does not watch the `data/` folder. After adding or changing files there, recalculate from the web interface, as in the desktop app.
+
+**Upgrading from an earlier version:** older stacks also ran an `engine-watcher` service, which no longer exists. Start the stack with `docker compose up -d --build --remove-orphans` once so the old container is removed instead of being left behind.
 
 ### Access to the API
 

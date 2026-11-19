@@ -294,7 +294,7 @@ async def run_etl_task(payload):
 async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
     """Saves biometric configurations and initiates the main ETL pipeline asynchronously via BackgroundTasks."""
     import config
-    # Save to session_config.json to persist across runs and for watcher
+    # Save to session_config.json so the next launch can prefill the form
     session_config = {
         "dob": payload.dob.isoformat(),
         "gender": payload.gender,

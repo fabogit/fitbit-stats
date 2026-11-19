@@ -13,5 +13,5 @@ ENV CLIENT_PUBLIC_DIR="/app/shared"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Use -u to pass stdout to docker logs unbuffered (explicit via ENV now as well)
-CMD ["python", "-u", "watch.py"]
+# The API is the only process that runs the ETL (PYTHONUNBUFFERED above keeps the logs live)
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
