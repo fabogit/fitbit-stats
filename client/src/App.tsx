@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useAppDispatch, useAppSelector } from "./store/store";
 import { fetchHealthData } from "./features/dashboard/dashboardSlice";
 import { apiFetch } from "@/lib/api";
+import { loadJobStatus } from "./features/job/jobApi";
+import { useJobStatus } from "./features/job/useJobStatus";
 import { Sidebar } from "./components/dashboard/Sidebar";
 import { OverviewView } from "./components/dashboard/views/OverviewView";
 import { TimelineView } from "./components/dashboard/views/TimelineView";
@@ -31,6 +33,9 @@ function App() {
     return true;
   });
 
+  // Keeps state.job in step with the server for the whole life of the app.
+  useJobStatus();
+
   useEffect(() => {
     // Check if configuration exists
     const checkConfig = async () => {
@@ -45,6 +50,10 @@ function App() {
             setIsFirstRun(true);
           }
         } else {
+          // Read the job status first: the run that is current when the data is
+          // loaded is the baseline for reloading it later. Asked in parallel with
+          // the config; a server that does not answer must not block the data.
+          const statusRead = loadJobStatus(dispatch).catch(() => undefined);
           const resp = await apiFetch("/api/config");
           const configData = await resp.json();
           
@@ -52,6 +61,7 @@ function App() {
             setIsFirstRun(true);
           } else {
             setIsFirstRun(false);
+            await statusRead;
             dispatch(fetchHealthData());
           }
         }
@@ -66,7 +76,7 @@ function App() {
 
   const handleInitialConfigSuccess = () => {
     setIsFirstRun(false);
-    // fetchHealthData is now automatically dispatched via WebSocket closure inside ConfigForm
+    // The data is loaded by the job listener when the run that was just started finishes.
   };
 
   const handleTabChange = (tab: string) => {

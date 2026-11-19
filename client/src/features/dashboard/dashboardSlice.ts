@@ -7,7 +7,6 @@ import type { HealthRecord, DateRange } from "@/types/health";
 import { subMonths, parseISO, format } from "date-fns";
 import { isTauri } from "@tauri-apps/api/core";
 import { readTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
-import { apiFetch, waitForServer } from "@/lib/api";
 
 interface DashboardState {
   data: HealthRecord[];
@@ -17,12 +16,6 @@ interface DashboardState {
   maxDataDate: string;
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
-  warnings: EtlWarning[];
-  // Only the response of the latest warnings request may set `warnings`.
-  warningsRequestId: string | null;
-  isProcessing: boolean;
-  etlProgress: number;
-  etlStep: string;
 }
 
 const initialState: DashboardState = {
@@ -33,18 +26,7 @@ const initialState: DashboardState = {
   maxDataDate: "",
   status: "idle",
   error: null,
-  warnings: [],
-  warningsRequestId: null,
-  isProcessing: false,
-  etlProgress: 0,
-  etlStep: "",
 };
-
-/** A file the last ETL run skipped (file name only) and why. */
-export interface EtlWarning {
-  file: string;
-  reason: string;
-}
 
 /** Parses the content of dashboard_data.json; anything but a JSON array is an error. */
 function parseDashboardData(text: string): HealthRecord[] {
@@ -96,35 +78,9 @@ async function readDashboardData(): Promise<HealthRecord[]> {
   return parseDashboardData(await response.text());
 }
 
-/**
- * Files skipped by the last ETL run. Not essential, so it is a separate thunk
- * that never delays the data: any failure means "none known".
- */
-export const fetchEtlWarnings = createAsyncThunk<EtlWarning[]>(
-  "dashboard/fetchEtlWarnings",
-  async () => {
-    try {
-      // The desktop sidecar may still be starting when the data is first read.
-      if (isTauri() && !(await waitForServer(undefined, 15_000))) return [];
-      const resp = await apiFetch("/api/etl-warnings");
-      if (!resp.ok) return [];
-      const list: unknown = await resp.json();
-      return Array.isArray(list) ? (list as EtlWarning[]) : [];
-    } catch (e) {
-      console.warn("Could not read ETL warnings:", e);
-      return [];
-    }
-  }
-);
-
 export const fetchHealthData = createAsyncThunk<HealthRecord[], { force?: boolean } | undefined>(
   "dashboard/fetchHealthData",
-  async (_arg, { dispatch }) => {
-    const records = await readDashboardData();
-    // Fire and forget: the banner must never delay the data.
-    if (records.length > 0) void dispatch(fetchEtlWarnings());
-    return records;
-  },
+  async () => readDashboardData(),
   {
     // --- CACHING LOGIC ---
     // Skip the call when data is already loaded or loading, unless the caller
@@ -158,17 +114,6 @@ const dashboardSlice = createSlice({
         state.dateRange = { start, end };
         state.filteredData = state.data;
       }
-    },
-    setIsProcessing(state, action: PayloadAction<boolean>) {
-      state.isProcessing = action.payload;
-      if (!action.payload) {
-        state.etlProgress = 0;
-        state.etlStep = "";
-      }
-    },
-    setEtlProgress(state, action: PayloadAction<{ progress: number; step: string }>) {
-      state.etlProgress = action.payload.progress;
-      state.etlStep = action.payload.step;
     },
   },
   extraReducers: (builder) => {
@@ -205,10 +150,7 @@ const dashboardSlice = createSlice({
             (d) => d.date >= startDate && d.date <= endDate
           );
         } else {
-          // Empty result (e.g. after a reset): drop everything shown before,
-          // warnings included, and ignore a warnings response still in flight.
-          state.warnings = [];
-          state.warningsRequestId = null;
+          // Empty result (e.g. after a reset): drop everything shown before.
           state.filteredData = [];
           state.dateRange = null;
           state.minDataDate = "";
@@ -221,24 +163,14 @@ const dashboardSlice = createSlice({
         state.error = action.error.message || "Unknown error";
         state.data = [];
         state.filteredData = [];
-        state.warnings = [];
-        state.warningsRequestId = null;
         state.dateRange = null;
         state.minDataDate = "";
         state.maxDataDate = "";
-      })
-      .addCase(fetchEtlWarnings.pending, (state, action) => {
-        state.warningsRequestId = action.meta.requestId;
-      })
-      .addCase(fetchEtlWarnings.fulfilled, (state, action) => {
-        if (state.warningsRequestId === action.meta.requestId) {
-          state.warnings = action.payload;
-        }
       });
   },
 });
 
-export const { setDateRange, resetFilter, setIsProcessing, setEtlProgress } = dashboardSlice.actions;
+export const { setDateRange, resetFilter } = dashboardSlice.actions;
 
 export const selectFilteredData = (state: { dashboard: DashboardState }) => state.dashboard.filteredData;
 export const selectDashboardStatus = (state: { dashboard: DashboardState }) => state.dashboard.status;

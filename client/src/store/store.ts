@@ -5,13 +5,17 @@ import {
   type TypedUseSelectorHook,
 } from "react-redux";
 import dashboardReducer from "@/features/dashboard/dashboardSlice";
+import jobReducer from "@/features/job/jobSlice";
+import { jobListener } from "@/features/job/jobListener";
 import themeReducer from "./slices/themeSlice";
 
 export const store = configureStore({
   reducer: {
     dashboard: dashboardReducer,
+    job: jobReducer,
     theme: themeReducer,
   },
+  middleware: (getDefault) => getDefault().prepend(jobListener.middleware),
 });
 
 // Infer types
