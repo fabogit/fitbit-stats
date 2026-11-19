@@ -41,7 +41,7 @@ def parse_resting_heart_rate(file_path):
         return None
     df = pd.DataFrame(records)
     df['date'] = pd.to_datetime(df['date'], format='%m/%d/%y')
-    df.set_index('date', inplace=True)
+    df = df.set_index('date')
     return df
 
 
@@ -67,7 +67,7 @@ def parse_weight(file_path):
     # Conversion LBS -> KG
     df['weight'] = (df['weight'] * 0.453592).round(1)
     df['date'] = pd.to_datetime(df['date'], format='%m/%d/%y')
-    df.set_index('date', inplace=True)
+    df = df.set_index('date')
     return df[~df.index.duplicated(keep='first')]
 
 
@@ -86,7 +86,7 @@ def parse_sleep_score_csv(file_path):
                       Aggregates multiple entries per day using max().
     """
     df = _read_csv(file_path)
-    df.rename(columns={'timestamp': 'date'}, inplace=True)
+    df = df.rename(columns={'timestamp': 'date'})
     df['date'] = pd.to_datetime(
         df['date'], format='ISO8601', utc=True).dt.tz_convert(None).dt.normalize()
     cols = [c for c in ['overall_score', 'deep_sleep_in_minutes',
@@ -115,8 +115,8 @@ def parse_simple_activity_json(file_path):
     df['value'] = pd.to_numeric(df['value'], errors='coerce')
     df['date'] = pd.to_datetime(
         df['dateTime'], format='%m/%d/%y %H:%M:%S').dt.normalize()
-    df.set_index('date', inplace=True)
-    df.rename(columns={'value': base_name}, inplace=True)
+    df = df.set_index('date')
+    df = df.rename(columns={'value': base_name})
     return df[[base_name]]
 
 
@@ -214,7 +214,7 @@ def parse_active_zones_csv(file_path):
     # Rename columns based on map
     rename_cols = {col: zone_map.get(
         col, f"zone_{col.lower().replace(' ', '_')}") for col in pivot.columns}
-    pivot.rename(columns=rename_cols, inplace=True)
+    pivot = pivot.rename(columns=rename_cols)
 
     return pivot
 
@@ -233,8 +233,8 @@ def parse_spo2_csv(file_path):
     df = _read_csv(file_path)
     df['date'] = pd.to_datetime(
         df['timestamp'], utc=True).dt.tz_convert(None).dt.normalize()
-    df.rename(columns={'average_value': 'spo2_avg',
-              'lower_bound': 'spo2_min', 'upper_bound': 'spo2_max'}, inplace=True)
+    df = df.rename(columns={'average_value': 'spo2_avg',
+                            'lower_bound': 'spo2_min', 'upper_bound': 'spo2_max'})
     return df[['spo2_avg', 'spo2_min', 'spo2_max', 'date']].groupby('date').mean()
 
 
@@ -311,7 +311,7 @@ def sleep_stages_detail(file_path):
         return None
     df = pd.DataFrame(records)
     df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
-    df.set_index('date', inplace=True)
+    df = df.set_index('date')
     out = df.groupby('date').sum()
     out['_sessions'] = pd.Series(
         [sessions[d.strftime('%Y-%m-%d')] for d in out.index], index=out.index, dtype=object)
@@ -333,7 +333,7 @@ def parse_hrv_csv(file_path):
     if 'rmssd' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df.set_index('date', inplace=True)
+    df = df.set_index('date')
     return df[['rmssd']]
 
 
@@ -355,8 +355,8 @@ def parse_stress_csv(file_path):
         return None
     df = df[df['STRESS_SCORE'] > 0]
     df['date'] = pd.to_datetime(df['DATE']).dt.normalize()
-    df.set_index('date', inplace=True)
-    df.rename(columns={'STRESS_SCORE': 'stress_score'}, inplace=True)
+    df = df.set_index('date')
+    df = df.rename(columns={'STRESS_SCORE': 'stress_score'})
     return df[['stress_score']]
 
 
@@ -368,8 +368,8 @@ def parse_acwr_csv(file_path):
     if 'ratio' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df.rename(columns={'ratio': 'acwr_ratio'}, inplace=True)
-    df.set_index('date', inplace=True)
+    df = df.rename(columns={'ratio': 'acwr_ratio'})
+    df = df.set_index('date')
     return df[['acwr_ratio']]
 
 
@@ -381,8 +381,8 @@ def parse_vo2max_csv(file_path):
     if 'demographic vo2max' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df.rename(columns={'demographic vo2max': 'vo2max'}, inplace=True)
-    df.set_index('date', inplace=True)
+    df = df.rename(columns={'demographic vo2max': 'vo2max'})
+    df = df.set_index('date')
     return df[['vo2max']]
 
 
@@ -394,8 +394,8 @@ def parse_readiness_csv(file_path):
     if 'score' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df.rename(columns={'score': 'readiness_score'}, inplace=True)
-    df.set_index('date', inplace=True)
+    df = df.rename(columns={'score': 'readiness_score'})
+    df = df.set_index('date')
     return df[['readiness_score']]
 
 
@@ -407,8 +407,8 @@ def parse_respiratory_rate_csv(file_path):
     if 'breaths per minute' not in df.columns:
         return None
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df.rename(columns={'breaths per minute': 'respiratory_rate'}, inplace=True)
-    df.set_index('date', inplace=True)
+    df = df.rename(columns={'breaths per minute': 'respiratory_rate'})
+    df = df.set_index('date')
     return df[['respiratory_rate']]
 
 
@@ -422,7 +422,7 @@ def parse_skin_temperature_csv(file_path):
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
     df['temperature_variation'] = df['nightly temperature celsius'] - \
         df['baseline temperature celsius']
-    df.set_index('date', inplace=True)
+    df = df.set_index('date')
     return df[['temperature_variation']]
 
 
