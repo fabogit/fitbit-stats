@@ -17,7 +17,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "CLIENT_PUBLIC_DIR", str(tmp_path))
     # Validation only: never run the pipeline.
     async def no_etl(_payload):
-        return None
+        api.etl_run_lock.release()      # like a run that ended at once
     monkeypatch.setattr(api, "run_etl_task", no_etl)
     return TestClient(api.app)
 

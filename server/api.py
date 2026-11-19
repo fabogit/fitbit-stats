@@ -4,6 +4,7 @@ import multiprocessing
 import os
 import json
 import asyncio
+import threading
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import date
@@ -254,27 +255,47 @@ def run_etl_sync(payload, loop):
         finish("error", str(e), [])
 
 
+# Held from the moment POST /api/start accepts a run until that run has ended,
+# so a second start is refused instead of overlapping the first.
+etl_run_lock = threading.Lock()
+
+
 async def run_etl_task(payload):
-    """Starts the synchronous execution of the ETL in a separate thread."""
-    await manager.broadcast({"event": "etl_progress", "step": "Starting ETL engine...", "progress": 0})
-    loop = asyncio.get_running_loop()
-    await asyncio.to_thread(run_etl_sync, payload, loop)
+    """Starts the synchronous execution of the ETL in a separate thread.
+
+    Releases etl_run_lock, taken by start_etl, whatever the outcome.
+    """
+    try:
+        await manager.broadcast({"event": "etl_progress", "step": "Starting ETL engine...", "progress": 0})
+        loop = asyncio.get_running_loop()
+        await asyncio.to_thread(run_etl_sync, payload, loop)
+    finally:
+        etl_run_lock.release()
 
 
 @app.post("/api/start")
 async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
-    """Saves biometric configurations and initiates the main ETL pipeline asynchronously via BackgroundTasks."""
-    # Save to session_config.json so the next launch can prefill the form
-    session_config = {
-        "dob": payload.dob.isoformat(),
-        "gender": payload.gender,
-        "height": payload.height,
-        "weight": payload.weight,
-        "data_path": payload.data_path
-    }
-    config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
-    with open(config_path, "w") as f:
-        json.dump(session_config, f)
+    """Saves biometric configurations and initiates the main ETL pipeline asynchronously via BackgroundTasks.
+
+    Answers 409, saving nothing and starting nothing, while another run is in progress.
+    """
+    if not etl_run_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="An ETL run is already in progress")
+    try:
+        # Save to session_config.json so the next launch can prefill the form
+        session_config = {
+            "dob": payload.dob.isoformat(),
+            "gender": payload.gender,
+            "height": payload.height,
+            "weight": payload.weight,
+            "data_path": payload.data_path
+        }
+        config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
+        with open(config_path, "w") as f:
+            json.dump(session_config, f)
+    except BaseException:
+        etl_run_lock.release()
+        raise
 
     # Run ETL logic internally without subprocesses
     background_tasks.add_task(run_etl_task, payload)
