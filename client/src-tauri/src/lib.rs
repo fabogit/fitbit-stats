@@ -57,7 +57,6 @@ fn stop_sidecar(child: CommandChild) {
 pub fn run() {
   tauri::Builder::default()
     .invoke_handler(tauri::generate_handler![get_api_token])
-    .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_shell::init())
     .setup(|app| {

@@ -13,6 +13,7 @@ import {
 import { useAppSelector } from "@/store/store";
 import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
 interface WeightChartProps {
   syncId?: string;
@@ -22,7 +23,7 @@ interface WeightChartProps {
 export const WeightChart = memo(function WeightChart({
   syncId,
 }: WeightChartProps) {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector(selectFilteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
   const weightColor = resolvedTheme === "dark" ? "#facc15" : "#ca8a04"; // Yellow-400 vs Yellow-600
   const caloriesColor = resolvedTheme === "dark" ? "#fb923c" : "#ea580c"; // Orange-400 vs Orange-600

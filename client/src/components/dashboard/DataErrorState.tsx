@@ -1,7 +1,7 @@
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppDispatch, useAppSelector } from "../../store/store";
-import { fetchHealthData } from "../../features/dashboard/dashboardSlice";
+import { fetchHealthData, selectDashboardError } from "../../features/dashboard/dashboardSlice";
 
 interface DataErrorStateProps {
   onRecalculate: () => void;
@@ -10,7 +10,7 @@ interface DataErrorStateProps {
 /** Shown when the dashboard data exists but could not be loaded (not the empty state). */
 export function DataErrorState({ onRecalculate }: DataErrorStateProps) {
   const dispatch = useAppDispatch();
-  const error = useAppSelector((state) => state.dashboard.error);
+  const error = useAppSelector(selectDashboardError);
 
   return (
     <div
@@ -24,7 +24,7 @@ export function DataErrorState({ onRecalculate }: DataErrorStateProps) {
         {error || "Unknown error"}
       </p>
       <div className="flex flex-wrap gap-3 justify-center">
-        <Button onClick={() => dispatch(fetchHealthData({ force: true }))}>
+        <Button onClick={() => dispatch(fetchHealthData())}>
           <RefreshCw className="w-4 h-4 mr-2" />
           Try again
         </Button>

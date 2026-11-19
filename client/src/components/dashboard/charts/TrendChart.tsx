@@ -12,6 +12,7 @@ import {
 import { useAppSelector } from "@/store/store";
 import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
 interface TrendChartProps {
   syncId?: string;
@@ -21,7 +22,7 @@ interface TrendChartProps {
 export const TrendChart = memo(function TrendChart({
   syncId,
 }: TrendChartProps) {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector(selectFilteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
   const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";
 

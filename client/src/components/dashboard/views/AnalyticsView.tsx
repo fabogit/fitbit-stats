@@ -8,9 +8,10 @@ import { RHRCorrelationChart } from "../charts/RHRCorrelationChart";
 import { SedentaryTrendChart } from "../charts/SedentaryTrendChart";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/utils";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
 export function AnalyticsView({ onAction }: { onAction?: () => void }) {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector(selectFilteredData);
   const isMobile = useMediaQuery("(max-width: 640px)");
 
   if (filteredData.length === 0) {

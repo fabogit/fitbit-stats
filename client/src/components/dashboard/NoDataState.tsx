@@ -2,6 +2,7 @@ import { BarChart3, Calculator, PlusCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppSelector } from "../../store/store";
 import { selectIsRunning, selectProgress, selectStep } from "@/features/job/jobSlice";
+import { selectDateRange, selectHasData } from "@/features/dashboard/dashboardSlice";
 
 interface NoDataStateProps {
   onAction?: () => void;
@@ -17,11 +18,12 @@ export function NoDataState({
   const isProcessing = useAppSelector(selectIsRunning);
   const etlProgress = useAppSelector(selectProgress);
   const etlStep = useAppSelector(selectStep);
-  const { data, dateRange } = useAppSelector((state) => state.dashboard);
+  const hasData = useAppSelector(selectHasData);
+  const dateRange = useAppSelector(selectDateRange);
 
   // Data exists but the selected period contains none of it: say so, and do
   // not send the user back to the first-run calculation.
-  if (!isProcessing && data.length > 0 && dateRange) {
+  if (!isProcessing && hasData && dateRange) {
     title = "No Data in the Selected Range";
     description = `There are no records between ${dateRange.start} and ${dateRange.end}. Choose a different period in the date filter.`;
     onAction = undefined;

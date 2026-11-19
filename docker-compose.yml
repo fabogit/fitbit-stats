@@ -30,8 +30,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:80"
-    volumes:
-      - shared_data:/app/shared
     depends_on:
       api-server:
         condition: service_healthy

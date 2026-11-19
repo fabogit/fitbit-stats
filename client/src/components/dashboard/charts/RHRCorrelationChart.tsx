@@ -13,9 +13,10 @@ import {
 import { useAppSelector } from "@/store/store";
 import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
 export const RHRCorrelationChart = memo(function RHRCorrelationChart() {
-  const filteredData = useAppSelector((state) => state.dashboard.filteredData);
+  const filteredData = useAppSelector(selectFilteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
 
   const axisColor = resolvedTheme === "dark" ? "#94a3b8" : "#64748b";

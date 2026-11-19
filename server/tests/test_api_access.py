@@ -34,6 +34,7 @@ def test_request_without_token_is_rejected(client, with_token):
     assert client.post("/api/brief", json={}).status_code in (401, 403)
     assert client.delete("/api/clear").status_code in (401, 403)
     assert client.get("/api/status").status_code in (401, 403)
+    assert client.get("/api/data").status_code in (401, 403)
     assert client.post("/api/start", json={}).status_code in (401, 403)
 
 
@@ -64,6 +65,34 @@ def test_status_from_unlisted_origin_gets_no_cors_permission(client, no_token):
 
 def test_status_is_readable_by_an_app_origin(client, no_token):
     r = client.get("/api/status", headers={"Origin": APP_ORIGIN})
+    assert r.headers["access-control-allow-origin"] == APP_ORIGIN
+
+
+def test_data_needs_the_token(client, with_token):
+    assert client.get("/api/data").status_code == 401
+    assert client.get("/api/data", headers=auth("x" * 64)).status_code == 401
+    assert client.get("/api/data", headers={"Authorization": TOKEN}).status_code == 401
+    r = client.get("/api/data", headers=auth())
+    assert r.status_code == 200 and isinstance(r.json(), list)
+
+
+def test_data_works_without_token_when_variable_unset(client, no_token):
+    assert client.get("/api/data").status_code == 200
+
+
+def test_data_from_unlisted_origin_gets_no_cors_permission(client, no_token):
+    r = client.get("/api/data", headers={"Origin": OTHER_ORIGIN})
+    assert "access-control-allow-origin" not in r.headers
+
+
+def test_data_is_readable_by_an_app_origin(client, no_token):
+    r = client.get("/api/data", headers={"Origin": APP_ORIGIN})
+    assert r.headers["access-control-allow-origin"] == APP_ORIGIN
+
+
+def test_data_rejection_is_readable_by_app_origin(client, with_token):
+    r = client.get("/api/data", headers={"Origin": APP_ORIGIN})
+    assert r.status_code == 401
     assert r.headers["access-control-allow-origin"] == APP_ORIGIN
 
 

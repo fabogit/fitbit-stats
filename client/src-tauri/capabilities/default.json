@@ -7,7 +7,6 @@
   ],
   "permissions": [
     "core:default",
-    "fs:allow-appdata-read-recursive",
     "dialog:default"
   ]
 }

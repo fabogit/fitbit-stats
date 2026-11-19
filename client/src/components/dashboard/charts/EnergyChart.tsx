@@ -12,6 +12,7 @@ import {
 import { useAppSelector } from "@/store/store";
 import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
 interface EnergyChartProps {
   syncId?: string;
@@ -21,7 +22,7 @@ interface EnergyChartProps {
 export const EnergyChart = memo(function EnergyChart({
   syncId,
 }: EnergyChartProps) {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector(selectFilteredData);
 
   const resolvedTheme = useAppSelector(selectResolvedTheme);
 

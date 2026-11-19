@@ -193,7 +193,7 @@ export function ConfigForm({
       setFormData({ dob: "", gender: "", height: "", weight: "", data_path: defaultDataPath() });
       setPathStatus("idle");
       // Calling fetchHealthData will reload empty state causing NoDataState to re-render in Dashboard
-      dispatch(fetchHealthData({ force: true }));
+      dispatch(fetchHealthData());
       alert("All application data has been successfully deleted.");
     } catch (e) {
       console.error("Error clearing data:", e);
