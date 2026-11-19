@@ -50,7 +50,7 @@ def filter_by_date(df):
 # Decision (heart-rate speed-up): the min/max/avg BPM columns are kept, the
 # parser is rewritten without pandas and its files are parsed in parallel.
 # Skipping the source would drop these columns from dashboard_data.json.
-PARALLEL_PARSERS = (parsers.parse_heart_rate_intraday_summary,)
+PARALLEL_PARSERS = (parsers.heart_rate_intraday_detail,)
 MAX_WORKERS = 8
 
 
@@ -87,13 +87,124 @@ def _skip_reason(error, path):
     return f"{type(error).__name__}: {' '.join(text.split())}"[:200]
 
 
-def load_collection(folder_name, file_pattern, parser_func, warnings=None):
+# How the rows of the same day coming from different files of one source are
+# combined (see _combine_duplicate_days). A rule is one of:
+#   "sum"                 additive values (the parts of a split day add up)
+#   "min" / "max"         daily minimum / maximum
+#   "last"                snapshot values: the row of the last file in name order
+#   ("session", i)        field i of the sessions listed in the "_sessions" helper
+#                         column, each session counted once by its id (the same
+#                         session can be in two overlapping files), then added up
+#   ("session_mean", i)   same sessions, mean of field i over those where it is
+#                         not None (the last row's value if there are none)
+#   ("ratio", num, den, decimals)
+#                         an average recomputed as sum(num) / sum(den) over the
+#                         helper columns the parser exposes (names start with an
+#                         underscore and are dropped from the result)
+# A column without a rule is a snapshot ("last").
+def _sum_of(*columns):
+    return {c: "sum" for c in columns}
+
+
+RULES_HEART_RATE = {
+    "min_bpm": "min", "max_bpm": "max",
+    "avg_bpm": ("ratio", "_bpm_sum", "_bpm_n", 1),
+    "_bpm_sum": "sum", "_bpm_n": "sum",
+}
+RULES_EXERCISE = {
+    "exercise_duration": ("session", 1), "exercise_calories": ("session", 2),
+    "exercise_count": ("session", 3), "exercise_aef": ("session_mean", 4),
+}
+RULES_STEPS = _sum_of("steps")
+RULES_DISTANCE = _sum_of("distance")
+RULES_CALORIES = _sum_of("calories_total")
+RULES_SLEEP_STAGES = {
+    "sleep_deep": ("session", 1), "sleep_light": ("session", 2),
+    "sleep_rem": ("session", 3), "sleep_awake": ("session", 4),
+}
+RULES_ZONES = _sum_of("zone_out_of_range", "zone_light", "zone_moderate", "zone_vigorous",
+                      "zone_fat_burn", "zone_cardio", "zone_peak")
+RULES_ACTIVITY_MINUTES = _sum_of("very_active_minutes", "moderately_active_minutes",
+                                 "lightly_active_minutes", "sedentary_minutes")
+
+
+SESSIONS_COLUMN = "_sessions"
+
+
+def _unique_sessions(groups):
+    """{day: sessions} from the per-file session lists of each day.
+
+    A session with an id found in more than one file counts once; if the copies
+    differ, the version of the last file (in name order) is used. Sessions
+    without an id are all kept.
+    """
+    unique = {}
+    for day, lists in groups:
+        found = {}
+        for n, session in enumerate(s for lst in lists for s in lst):
+            found[session[0] if session[0] is not None else ("no-id", n)] = session
+        unique[day] = list(found.values())
+    return unique
+
+
+def _combine_duplicate_days(df, rules):
+    """
+    Reduce a frame with several rows per day (one per file the day appears in)
+    to one row per day, with the rule of each column (see RULES_*).
+
+    Days that appear once are returned untouched. Rows must be in file order
+    (files sorted by name), which is what the "last" rule relies on.
+    """
+    dup = df.index.duplicated(keep=False)
+    if not dup.any():
+        return df
+    rest, multi = df[~dup], df[dup]
+    grouped = multi.groupby(level=0)
+    last = multi[~multi.index.duplicated(keep='last')]
+    combined = {}
+    sessions_by_day = None
+    for col in multi.columns:
+        rule = rules.get(col, "last")
+        if rule == "sum":
+            combined[col] = grouped[col].sum(min_count=1)
+        elif rule == "min":
+            combined[col] = grouped[col].min()
+        elif rule == "max":
+            combined[col] = grouped[col].max()
+        elif rule == "last":
+            combined[col] = last[col]
+        elif rule[0] in ("session", "session_mean"):
+            if sessions_by_day is None:
+                sessions_by_day = _unique_sessions(grouped[SESSIONS_COLUMN])
+            field = rule[1]
+            if rule[0] == "session":
+                combined[col] = pd.Series(
+                    {day: sum(s[field] for s in found) for day, found in sessions_by_day.items()})
+            else:
+                values = {day: [s[field] for s in found if s[field] is not None]
+                          for day, found in sessions_by_day.items()}
+                combined[col] = pd.Series({
+                    day: sum(v) / len(v) if v else last.at[day, col] for day, v in values.items()})
+        else:
+            _, num, den, decimals = rule
+            num_sum, den_sum = grouped[num].sum(), grouped[den].sum()
+            ratio = num_sum / den_sum.where(den_sum > 0)
+            if decimals is not None:
+                ratio = ratio.round(decimals)
+            # nothing to average over in any file: fall back to the last row's value
+            combined[col] = ratio.where(den_sum > 0, last[col])
+    combined = pd.DataFrame(combined).rename_axis(df.index.name)
+    return combined if rest.empty else pd.concat([rest, combined])
+
+
+def load_collection(folder_name, file_pattern, parser_func, warnings=None, combine=None):
     """
     Scans a specific folder for files matching a pattern, parses them,
     and aggregates them into a single DataFrame.
 
-    Handles timezone normalization (stripping timezones) and index deduplication
-    to ensure a clean time-series.
+    Handles timezone normalization (stripping timezones) and the days that appear
+    in more than one file, to ensure a clean time-series. Files are read in name
+    order, so the result does not depend on the order the file system lists them.
 
     Args:
         folder_name (str): Subfolder name within DATA_DIR.
@@ -102,12 +213,16 @@ def load_collection(folder_name, file_pattern, parser_func, warnings=None):
         warnings (list, optional): Receives one {"file", "reason"} dict (file name
             only, no folder) for every file that was skipped because it could not
             be parsed.
+        combine (dict, optional): Rule per column for a day that appears in more
+            than one file (see RULES_*); columns without a rule keep the value
+            of the last file in name order.
 
     Returns:
-        pd.DataFrame: Combined and sorted DataFrame for the specific metric.
+        pd.DataFrame: Combined and sorted DataFrame for the specific metric, one
+        row per day. Helper columns (names starting with "_") are removed.
     """
     search_path = os.path.join(config.DATA_DIR, folder_name, file_pattern)
-    files = glob.glob(search_path)
+    files = sorted(glob.glob(search_path))
     if not files:
         return pd.DataFrame()
 
@@ -132,9 +247,10 @@ def load_collection(folder_name, file_pattern, parser_func, warnings=None):
     if isinstance(full_df.index, pd.DatetimeIndex) and full_df.index.tz is not None:
         full_df.index = full_df.index.tz_localize(None)
 
-    # Deduplicate index: Keep the last entry if overlaps occur
-    if full_df.index.duplicated().any():
-        full_df = full_df[~full_df.index.duplicated(keep='last')]
+    # A day can appear in several files (the export is split by date range):
+    # combine its parts per column instead of dropping all but one.
+    full_df = _combine_duplicate_days(full_df, combine or {})
+    full_df = full_df.drop(columns=[c for c in full_df.columns if str(c).startswith("_")])
 
     full_df = full_df.sort_index()
     return full_df
@@ -163,31 +279,35 @@ def merge_all_data(progress_callback=None, warnings=None):
     date_str = f"{config.START_DATE or 'first day'} to {config.END_DATE or 'last day'}"
     print(f"\n=== BUILDING MASTER DATASET ({date_str}) ===")
 
-    # Define Loading Plan: (Folder, Pattern, Parser, Label)
+    # Define Loading Plan: (Folder, Pattern, Parser, Label[, duplicate-day rules])
     load_plan = [
         ("Global Export Data", "resting_heart_rate-*.json",
          parsers.parse_resting_heart_rate, "Resting heart rate"),
         ("Global Export Data", "heart_rate-*.json",
-         parsers.parse_heart_rate_intraday_summary, "Heart rate intraday"),
-        ("Global Export Data", "steps-*.json", parsers.parse_steps_json, "Steps"),
-        ("Global Export Data", "distance-*.json", parsers.parse_distance_json, "Distance"),
-        ("Global Export Data", "exercise-*.json", parsers.parse_exercise_json, "Exercise sessions"),
+         parsers.heart_rate_intraday_detail, "Heart rate intraday", RULES_HEART_RATE),
+        ("Global Export Data", "steps-*.json", parsers.parse_steps_json, "Steps", RULES_STEPS),
+        ("Global Export Data", "distance-*.json", parsers.parse_distance_json, "Distance",
+         RULES_DISTANCE),
+        ("Global Export Data", "exercise-*.json", parsers.parse_exercise_json, "Exercise sessions",
+         RULES_EXERCISE),
         ("Global Export Data", "weight-*.json", parsers.parse_weight, "Weight"),
-        ("Global Export Data", "calories-*.json", parsers.parse_calories_intraday, "Calories"),
+        ("Global Export Data", "calories-*.json", parsers.parse_calories_intraday, "Calories",
+         RULES_CALORIES),
         ("Sleep Score", "sleep_score.csv", parsers.parse_sleep_score_csv, "Sleep scores"),
-        ("Global Export Data", "sleep-*.json", parsers.parse_sleep_json_detailed, "Sleep stages"),
+        ("Global Export Data", "sleep-*.json", parsers.sleep_stages_detail, "Sleep stages",
+         RULES_SLEEP_STAGES),
         ("Oxygen Saturation (SpO2)", "Daily SpO2 - *.csv", parsers.parse_spo2_csv, "SpO2"),
         ("Heart Rate Variability",
          "Daily Heart Rate Variability Summary - *.csv", parsers.parse_hrv_csv, "HRV"),
         ("Stress Score", "Stress Score.csv", parsers.parse_stress_csv, "Stress scores"),
         ("Global Export Data", "very_active_minutes-*.json",
-         parsers.parse_simple_activity_json, "Active minutes"),
+         parsers.parse_simple_activity_json, "Active minutes", RULES_ACTIVITY_MINUTES),
         ("Global Export Data", "moderately_active_minutes-*.json",
-         parsers.parse_simple_activity_json, "Moderate activity"),
+         parsers.parse_simple_activity_json, "Moderate activity", RULES_ACTIVITY_MINUTES),
         ("Global Export Data", "lightly_active_minutes-*.json",
-         parsers.parse_simple_activity_json, "Light activity"),
+         parsers.parse_simple_activity_json, "Light activity", RULES_ACTIVITY_MINUTES),
         ("Global Export Data", "sedentary_minutes-*.json",
-         parsers.parse_simple_activity_json, "Sedentary minutes"),
+         parsers.parse_simple_activity_json, "Sedentary minutes", RULES_ACTIVITY_MINUTES),
         ("Physical Activity_GoogleData",
          "cardio_acute_chronic_workload_ratio.csv", parsers.parse_acwr_csv, "ACWR"),
         ("Physical Activity_GoogleData",
@@ -199,17 +319,17 @@ def merge_all_data(progress_callback=None, warnings=None):
         ("Physical Activity_GoogleData", "daily_sleep_temperature_derivations.csv",
          parsers.parse_skin_temperature_csv, "Skin temperature"),
         ("Physical Activity_GoogleData", "time_in_heart_rate_zone_*.csv",
-         parsers.parse_active_zones_csv, "HR zones"),
+         parsers.parse_active_zones_csv, "HR zones", RULES_ZONES),
     ]
 
     total = len(load_plan)
     datasets = []
-    for i, (folder, pattern, func, label) in enumerate(load_plan):
+    for i, (folder, pattern, func, label, *rules) in enumerate(load_plan):
         # Progress from 10% to 65% spread across all collections
         pct = 10 + int((i / total) * 55)
         if progress_callback:
             progress_callback(pct, f"Loading {label}")
-        datasets.append(load_collection(folder, pattern, func, warnings))
+        datasets.append(load_collection(folder, pattern, func, warnings, *rules))
 
     if progress_callback:
         progress_callback(65, "Merging datasets")
@@ -222,11 +342,7 @@ def merge_all_data(progress_callback=None, warnings=None):
     # Merge Strategy: Outer Join starting from the first non-empty dataset
     master_df = datasets[0]
     for i in range(1, len(datasets)):
-        current = datasets[i]
-        # Align indexes before merge just in case
-        if current.index.duplicated().any():
-            current = current.groupby(current.index).mean()
-        master_df = master_df.join(current, how='outer')
+        master_df = master_df.join(datasets[i], how='outer')
 
     master_df = filter_by_date(master_df)
 
