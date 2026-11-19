@@ -6,9 +6,10 @@ import { selectResolvedTheme } from "@/store/slices/themeSlice";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/utils";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
 export function ActivityHeatmap() {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector(selectFilteredData);
   const resolvedTheme = useAppSelector(selectResolvedTheme);
 
   const calendarData = useMemo(() => {

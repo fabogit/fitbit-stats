@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/store";
-import { setDateRange } from "@/features/dashboard/dashboardSlice";
+import { selectDateBounds, selectDateRange, selectHasData, setDateRange } from "@/features/dashboard/dashboardSlice";
 import { Calendar, Clock, Filter } from "lucide-react";
 import {
   subMonths,
@@ -13,11 +13,10 @@ import { cn } from "@/lib/utils";
 
 export function DateFilter() {
   const dispatch = useAppDispatch();
-  const { dateRange, data, minDataDate, maxDataDate } = useAppSelector((state) => state.dashboard);
+  const dateRange = useAppSelector(selectDateRange);
+  const hasData = useAppSelector(selectHasData);
+  const { min: minDate, max: maxDate } = useAppSelector(selectDateBounds);
   const [activePreset, setActivePreset] = useState<string>("3M");
-
-  const minDate = minDataDate;
-  const maxDate = maxDataDate;
 
   const presets = [
     { label: "1M", months: 1 },
@@ -30,7 +29,7 @@ export function DateFilter() {
 
   const applyPreset = useCallback(
     (months: number, type?: string, label?: string) => {
-      if (!data.length) return;
+      if (!hasData) return;
       const endObj = parseISO(maxDate);
       let startObj;
       if (type === "all") startObj = parseISO(minDate);
@@ -43,10 +42,10 @@ export function DateFilter() {
       dispatch(setDateRange({ start: newStart, end: maxDate }));
       if (label) setActivePreset(label);
     },
-    [data, dispatch, maxDate, minDate]
+    [hasData, dispatch, maxDate, minDate]
   );
 
-  if (!dateRange || data.length === 0) return null;
+  if (!dateRange || !hasData) return null;
 
   return (
     <div className="space-y-6">

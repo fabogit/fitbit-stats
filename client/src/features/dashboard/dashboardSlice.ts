@@ -1,6 +1,7 @@
 import {
   createSlice,
   createAsyncThunk,
+  createSelector,
   type PayloadAction,
 } from "@reduxjs/toolkit";
 import type { HealthRecord, DateRange } from "@/types/health";
@@ -9,10 +10,8 @@ import { apiFetch } from "@/lib/api";
 
 interface DashboardState {
   data: HealthRecord[];
-  filteredData: HealthRecord[];
+  /** The period shown; null while there is no data. The filtered records are derived (selectFilteredData). */
   dateRange: DateRange | null;
-  minDataDate: string;
-  maxDataDate: string;
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
   /** The load whose result counts: a slower, older load must not overwrite a newer one. */
@@ -21,10 +20,7 @@ interface DashboardState {
 
 const initialState: DashboardState = {
   data: [],
-  filteredData: [],
   dateRange: null,
-  minDataDate: "",
-  maxDataDate: "",
   status: "idle",
   error: null,
   requestId: null,
@@ -78,16 +74,12 @@ const dashboardSlice = createSlice({
   reducers: {
     setDateRange(state, action: PayloadAction<DateRange>) {
       state.dateRange = action.payload;
-      state.filteredData = state.data.filter(
-        (d) => d.date >= action.payload.start && d.date <= action.payload.end
-      );
     },
     resetFilter(state) {
       if (state.data.length > 0) {
         const start = state.data[0].date;
         const end = state.data[state.data.length - 1].date;
         state.dateRange = { start, end };
-        state.filteredData = state.data;
       }
     },
   },
@@ -106,32 +98,15 @@ const dashboardSlice = createSlice({
         state.data = records;
 
         if (records.length > 0) {
-          const firstRecord = records[0];
-          const lastRecord = records[records.length - 1];
-
-          state.minDataDate = firstRecord.date;
-          state.maxDataDate = lastRecord.date;
-
-          const endDate = lastRecord.date;
-
-          const endObj = parseISO(endDate);
-          const startObj = subMonths(endObj, 3);
-          let startDate = format(startObj, "yyyy-MM-dd");
-
-          if (startDate < firstRecord.date) {
-            startDate = firstRecord.date;
+          const endDate = records[records.length - 1].date;
+          let startDate = format(subMonths(parseISO(endDate), 3), "yyyy-MM-dd");
+          if (startDate < records[0].date) {
+            startDate = records[0].date;
           }
-
           state.dateRange = { start: startDate, end: endDate };
-          state.filteredData = records.filter(
-            (d) => d.date >= startDate && d.date <= endDate
-          );
         } else {
           // Empty result (e.g. after a reset): drop everything shown before.
-          state.filteredData = [];
           state.dateRange = null;
-          state.minDataDate = "";
-          state.maxDataDate = "";
         }
       })
       .addCase(fetchHealthData.rejected, (state, action) => {
@@ -140,17 +115,38 @@ const dashboardSlice = createSlice({
         state.status = "failed";
         state.error = action.error.message || "Unknown error";
         state.data = [];
-        state.filteredData = [];
         state.dateRange = null;
-        state.minDataDate = "";
-        state.maxDataDate = "";
       });
   },
 });
 
 export const { setDateRange, resetFilter } = dashboardSlice.actions;
 
-export const selectFilteredData = (state: { dashboard: DashboardState }) => state.dashboard.filteredData;
-export const selectDashboardStatus = (state: { dashboard: DashboardState }) => state.dashboard.status;
+type DashboardRoot = { dashboard: DashboardState };
+
+export const selectData = (state: DashboardRoot) => state.dashboard.data;
+export const selectDateRange = (state: DashboardRoot) => state.dashboard.dateRange;
+export const selectDashboardStatus = (state: DashboardRoot) => state.dashboard.status;
+export const selectDashboardError = (state: DashboardRoot) => state.dashboard.error;
+export const selectHasData = (state: DashboardRoot) => state.dashboard.data.length > 0;
+
+/**
+ * The records inside the selected period. Computed again only when the data or
+ * the period changes. A null period happens only with no data (or before the
+ * first load), and then there is nothing to show.
+ */
+export const selectFilteredData = createSelector(
+  [selectData, selectDateRange],
+  (data, range) => (range ? data.filter((d) => d.date >= range.start && d.date <= range.end) : [])
+);
+
+/** Whether the selected period contains at least one record. */
+export const selectHasFilteredData = (state: DashboardRoot) => selectFilteredData(state).length > 0;
+
+/** First and last date of the loaded data (the data comes sorted by date); empty strings without data. */
+export const selectDateBounds = createSelector([selectData], (data) => ({
+  min: data.length > 0 ? data[0].date : "",
+  max: data.length > 0 ? data[data.length - 1].date : "",
+}));
 
 export default dashboardSlice.reducer;

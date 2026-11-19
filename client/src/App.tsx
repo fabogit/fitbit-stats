@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { useAppDispatch, useAppSelector } from "./store/store";
-import { fetchHealthData } from "./features/dashboard/dashboardSlice";
+import {
+  fetchHealthData,
+  selectDashboardStatus,
+  selectHasFilteredData,
+} from "./features/dashboard/dashboardSlice";
 import { apiFetch, waitForServer } from "@/lib/api";
 import { loadJobStatus } from "./features/job/jobApi";
 import { useJobStatus } from "./features/job/useJobStatus";
@@ -24,7 +28,8 @@ type Startup = "starting" | "unreachable" | "first-run" | "ready";
 
 function App() {
   const dispatch = useAppDispatch();
-  const { status, filteredData } = useAppSelector((state) => state.dashboard);
+  const status = useAppSelector(selectDashboardStatus);
+  const hasFilteredData = useAppSelector(selectHasFilteredData);
   const [activeTab, setActiveTab] = useState("overview");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [startup, setStartup] = useState<Startup>("starting");
@@ -97,7 +102,7 @@ function App() {
       return <StartupScreen kind={startup} onRetry={() => setStartAttempt((n) => n + 1)} />;
     }
 
-    if (startup === "ready" && status === "loading" && filteredData.length === 0) {
+    if (startup === "ready" && status === "loading" && !hasFilteredData) {
       return (
         <div className="min-h-screen bg-background flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
@@ -151,7 +156,7 @@ function App() {
             )}
           >
             {/* NoDataState draws its own progress when there is nothing to show */}
-            {filteredData.length > 0 && <EtlProgressBanner />}
+            {hasFilteredData && <EtlProgressBanner />}
             <EtlWarningsBanner />
             <div className="p-4 md:p-8 flex-1">
               {status === "failed" ? (

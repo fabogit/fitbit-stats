@@ -4,9 +4,10 @@ import { DataTable } from "../datagrid/DataTable";
 import { columns } from "../datagrid/columns";
 import { calculateStats } from "@/lib/statistics";
 import { NoDataState } from "../NoDataState";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
 export function DataGridView({ onAction }: { onAction?: () => void }) {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector(selectFilteredData);
 
   const stats = useMemo(() => calculateStats(filteredData), [filteredData]);
 

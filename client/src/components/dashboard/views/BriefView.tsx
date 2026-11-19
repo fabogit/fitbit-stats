@@ -8,15 +8,17 @@ import { type ParsedBrief } from "@/lib/briefParser";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { useAppSelector } from "@/store/store";
 import { NoDataState } from "../NoDataState";
+import { selectDateBounds, selectHasFilteredData } from "@/features/dashboard/dashboardSlice";
 
 export function BriefView({ onAction }: { onAction?: () => void }) {
-  const { filteredData, minDataDate, maxDataDate } = useAppSelector((state) => state.dashboard);
+  const hasFilteredData = useAppSelector(selectHasFilteredData);
+  const { min: minDataDate, max: maxDataDate } = useAppSelector(selectDateBounds);
   const [date, setDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [briefData, setBriefData] = useState<ParsedBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (filteredData.length === 0) {
+  if (!hasFilteredData) {
     return <NoDataState onAction={onAction} />;
   }
 

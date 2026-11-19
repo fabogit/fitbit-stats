@@ -1,9 +1,10 @@
 import { KpiGrid } from "../KpiGrid";
 import { useAppSelector } from "@/store/store";
 import { NoDataState } from "../NoDataState";
+import { selectFilteredData } from "@/features/dashboard/dashboardSlice";
 
 export function OverviewView({ onAction }: { onAction?: () => void }) {
-  const { filteredData } = useAppSelector((state) => state.dashboard);
+  const filteredData = useAppSelector(selectFilteredData);
 
   if (filteredData.length === 0) {
     return (
