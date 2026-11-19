@@ -3,6 +3,7 @@
 Everything that lists the parsers or builds the default profile is kept
 here, so a later refactor of the parsers has a single place to adapt.
 """
+import fnmatch
 from datetime import date
 from pathlib import Path
 
@@ -18,32 +19,44 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # The profile the golden values of the tests are worked out with.
 DEFAULT_PROFILE = Profile(dob=date(1984, 3, 28), gender="male", height_cm=180, weight_kg=75.0)
 
-# One entry per source: key -> parser function. Adapt this table, not the
-# individual tests, if the parsers are ever reorganised.
-# The sources of the load plan, by key (their combine rules are S[key].rules).
+# One entry per test key: the source(s) of the load plan it reads. Adapt this
+# table, not the individual tests, if the parsers are ever reorganised.
 S = load_plan.SOURCES
-
 PARSERS = {
-    "resting_heart_rate": parsers.parse_resting_heart_rate,
-    "heart_rate": parsers.parse_heart_rate_intraday_summary,
-    "steps": parsers.parse_steps_json,
-    "distance": parsers.parse_distance_json,
-    "exercise": parsers.parse_exercise_json,
-    "weight": parsers.parse_weight,
-    "calories": parsers.parse_calories_intraday,
-    "sleep_score": parsers.parse_sleep_score_csv,
-    "sleep_json": parsers.parse_sleep_json_detailed,
-    "spo2": parsers.parse_spo2_csv,
-    "hrv": parsers.parse_hrv_csv,
-    "stress": parsers.parse_stress_csv,
-    "simple_activity": parsers.parse_simple_activity_json,
-    "acwr": parsers.parse_acwr_csv,
-    "vo2max": parsers.parse_vo2max_csv,
-    "readiness": parsers.parse_readiness_csv,
-    "respiratory_rate": parsers.parse_respiratory_rate_csv,
-    "skin_temperature": parsers.parse_skin_temperature_csv,
-    "active_zones": parsers.parse_active_zones_csv,
+    "resting_heart_rate": S["resting_heart_rate"],
+    "heart_rate": S["heart_rate"],
+    "steps": S["steps"],
+    "distance": S["distance"],
+    "exercise": S["exercise"],
+    "weight": S["weight"],
+    "calories": S["calories"],
+    "sleep_score": S["sleep_score"],
+    "sleep_json": S["sleep_stages"],
+    "spo2": S["spo2"],
+    "hrv": S["hrv"],
+    "stress": S["stress"],
+    # four sources with the same format: the file name picks one
+    "simple_activity": (S["very_active_minutes"], S["moderately_active_minutes"],
+                        S["lightly_active_minutes"], S["sedentary_minutes"]),
+    "acwr": S["acwr"],
+    "vo2max": S["vo2max"],
+    "readiness": S["readiness"],
+    "respiratory_rate": S["respiratory_rate"],
+    "skin_temperature": S["skin_temperature"],
+    "active_zones": S["active_zones"],
 }
+
+
+def source_for(key, path=None):
+    entry = PARSERS[key]
+    if isinstance(entry, tuple):
+        return next(s for s in entry if fnmatch.fnmatch(Path(path).name, s.pattern))
+    return entry
+
+
+def parser(key):
+    """The parser of a source, as the ETL calls it (helper columns included)."""
+    return parsers.parser_for(S[key])
 
 
 @pytest.fixture
@@ -53,9 +66,9 @@ def parser_table():
 
 @pytest.fixture
 def parse():
-    """parse("steps", path) -> the DataFrame (or None) the parser returns."""
+    """parse("steps", path) -> the DataFrame (or None) of the source, without helper columns."""
     def _parse(key, path):
-        return PARSERS[key](str(path))
+        return parsers.drop_helpers(parsers.parse(source_for(key, path), str(path)))
     return _parse
 
 

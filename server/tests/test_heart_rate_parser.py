@@ -2,7 +2,7 @@ import json
 
 import pandas as pd
 
-from modules import etl, parsers
+from modules import etl
 
 
 def write_heart_rate(path, samples):
@@ -25,10 +25,10 @@ SAMPLES = [
 ]
 
 
-def test_daily_min_max_avg(tmp_path):
+def test_daily_min_max_avg(tmp_path, parse):
     f = tmp_path / "heart_rate-2024-03-01.json"
     write_heart_rate(f, SAMPLES)
-    df = parsers.parse_heart_rate_intraday_summary(str(f))
+    df = parse("heart_rate", f)
     assert df.index.name == "date"
     assert list(df.index) == [pd.Timestamp("2024-03-01"), pd.Timestamp("2024-03-02")]
     assert list(df.columns) == ["min_bpm", "max_bpm", "avg_bpm"]
@@ -36,12 +36,12 @@ def test_daily_min_max_avg(tmp_path):
     assert df.loc["2024-03-02"].tolist() == [80, 91, 86.8]    # 434 / 5
 
 
-def test_empty_or_all_zero_file_returns_none(tmp_path):
+def test_empty_or_all_zero_file_returns_none(tmp_path, parse):
     f = tmp_path / "heart_rate-2024-03-01.json"
     f.write_text("[]")
-    assert parsers.parse_heart_rate_intraday_summary(str(f)) is None
+    assert parse("heart_rate", f) is None
     write_heart_rate(f, [("03/01/24 08:00:00", 0)])
-    assert parsers.parse_heart_rate_intraday_summary(str(f)) is None
+    assert parse("heart_rate", f) is None
 
 
 def test_etl_merges_heart_rate_files_in_parallel(tmp_path):

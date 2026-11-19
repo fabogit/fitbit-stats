@@ -27,7 +27,7 @@ LOAD_PLAN: tuple[Source, ...] = (
     Source("resting_heart_rate", "Resting heart rate", GLOBAL, "resting_heart_rate-*.json",
            Special(parsers.parse_resting_heart_rate), (Column("resting_bpm"),)),
     Source("heart_rate", "Heart rate intraday", GLOBAL, "heart_rate-*.json",
-           Special(parsers.heart_rate_intraday_detail), (
+           Special(parsers.parse_heart_rate_intraday), (
                Column("min_bpm", Agg.MIN),
                Column("max_bpm", Agg.MAX),
                Column("avg_bpm", Ratio("_bpm_sum", "_bpm_n", decimals=1)),
@@ -57,7 +57,7 @@ LOAD_PLAN: tuple[Source, ...] = (
                Column("restlessness"),
            )),
     Source("sleep_stages", "Sleep stages", GLOBAL, "sleep-*.json",
-           Special(parsers.sleep_stages_detail), (
+           Special(parsers.parse_sleep_stages), (
                Column("sleep_deep", FromSessions("deep")),
                Column("sleep_light", FromSessions("light")),
                Column("sleep_rem", FromSessions("rem")),

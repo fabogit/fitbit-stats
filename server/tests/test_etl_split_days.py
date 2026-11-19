@@ -9,8 +9,8 @@ import json
 import pandas as pd
 import pytest
 
-from conftest import S
-from modules import etl, parsers
+from conftest import S, parser
+from modules import etl
 
 GLOBAL = "Global Export Data"
 ZONES = "Physical Activity_GoogleData"
@@ -53,9 +53,9 @@ def samples(day, *values):
 # --- additive sources: the parts add up ---
 
 @pytest.mark.parametrize("prefix, parser, rules, column", [
-    ("steps", parsers.parse_steps_json, S["steps"].rules, "steps"),
-    ("distance", parsers.parse_distance_json, S["distance"].rules, "distance"),
-    ("calories", parsers.parse_calories_intraday, S["calories"].rules, "calories_total"),
+    ("steps", parser("steps"), S["steps"].rules, "steps"),
+    ("distance", parser("distance"), S["distance"].rules, "distance"),
+    ("calories", parser("calories"), S["calories"].rules, "calories_total"),
 ])
 def test_split_day_of_intraday_sums_equals_one_file(two_layouts, prefix, parser, rules, column):
     parts = [
@@ -77,7 +77,7 @@ def test_split_day_of_activity_minutes_sums(two_layouts, name):
     df = same_rows(two_layouts, GLOBAL,
                    [f"{name}-2024-03-01.json", f"{name}-2024-03-20.json"], parts,
                    f"{name}-2024-03-01.json", f"{name}-*.json",
-                   parsers.parse_simple_activity_json, S[name].rules)
+                   parser(name), S[name].rules)
     assert df[name].tolist() == [35]
 
 
@@ -98,7 +98,7 @@ def test_split_day_of_sleep_sessions_equals_one_file(two_layouts):
     df = same_rows(two_layouts, GLOBAL,
                    ["sleep-2024-03-01.json", "sleep-2024-03-20.json"], parts,
                    "sleep-2024-03-01.json", "sleep-*.json",
-                   parsers.sleep_stages_detail, S["sleep_stages"].rules)
+                   parser("sleep_stages"), S["sleep_stages"].rules)
     assert df.loc["2024-03-20"].tolist() == [70, 240, 85, 35]
     assert df.loc["2024-03-19"].tolist() == [50, 210, 70, 20]
     assert list(df.columns) == ["sleep_deep", "sleep_light", "sleep_rem", "sleep_awake"]
@@ -110,7 +110,7 @@ def test_sleep_session_present_in_two_overlapping_files_counts_once(two_layouts)
     parts = [[night], [night, nap]]          # the second file repeats the night and adds a nap
     split_dir, _ = two_layouts(GLOBAL, ["sleep-2024-03-01.json", "sleep-2024-03-20.json"], parts,
                                "unused.json")
-    df = load(split_dir, GLOBAL, "sleep-2024-0*.json", parsers.sleep_stages_detail,
+    df = load(split_dir, GLOBAL, "sleep-2024-0*.json", parser("sleep_stages"),
               S["sleep_stages"].rules)
     assert df.loc["2024-03-20"].tolist() == [70, 240, 85, 35]
 
@@ -119,7 +119,7 @@ def test_sleep_same_session_in_both_files_is_not_doubled(two_layouts):
     night = sleep_entry("2024-03-20", 60, 200, 80, 30, log_id=111)
     split_dir, _ = two_layouts(GLOBAL, ["sleep-2024-03-01.json", "sleep-2024-03-20.json"],
                                [[night], [night]], "unused.json")
-    df = load(split_dir, GLOBAL, "sleep-2024-0*.json", parsers.sleep_stages_detail,
+    df = load(split_dir, GLOBAL, "sleep-2024-0*.json", parser("sleep_stages"),
               S["sleep_stages"].rules)
     assert df.loc["2024-03-20"].tolist() == [60, 200, 80, 30]
 
@@ -141,7 +141,7 @@ def test_split_day_of_exercise_equals_one_file(two_layouts):
          session("03/21/24 07:00:00", 15, 90, 90)],
     ]
     df = same_rows(two_layouts, GLOBAL, ["exercise-0.json", "exercise-100.json"], parts,
-                   "exercise-0.json", "exercise-*.json", parsers.parse_exercise_json, S["exercise"].rules)
+                   "exercise-0.json", "exercise-*.json", parser("exercise"), S["exercise"].rules)
     row = df.loc["2024-03-20"]
     assert (row["exercise_count"], row["exercise_duration"], row["exercise_calories"]) == (3, 60.0, 450)
     # mean over the two sessions with heart rate: (100/100 + 300/150) / 2
@@ -157,7 +157,7 @@ def test_split_day_of_exercise_aef_is_weighted_by_sessions(two_layouts):
          session("03/20/24 18:00:00", 10, 500, 100)],                       # aef 5.0
     ]
     df = same_rows(two_layouts, GLOBAL, ["exercise-0.json", "exercise-100.json"], parts,
-                   "exercise-0.json", "exercise-*.json", parsers.parse_exercise_json, S["exercise"].rules)
+                   "exercise-0.json", "exercise-*.json", parser("exercise"), S["exercise"].rules)
     # mean of the three sessions is 3.0; the mean of the two files' means would be 2.5
     assert df.loc["2024-03-20", "exercise_aef"] == pytest.approx(3.0)
 
@@ -167,7 +167,7 @@ def test_exercise_session_present_in_two_overlapping_files_counts_once(two_layou
     ride = session("03/20/24 12:00:00", 30, 300, 100, log_id=2)      # aef 3.0
     split_dir, _ = two_layouts(GLOBAL, ["exercise-0.json", "exercise-100.json"],
                                [[run], [run, ride]], "unused.json")
-    df = load(split_dir, GLOBAL, "exercise-*.json", parsers.parse_exercise_json,
+    df = load(split_dir, GLOBAL, "exercise-*.json", parser("exercise"),
               S["exercise"].rules)
     row = df.loc["2024-03-20"]
     assert (row["exercise_count"], row["exercise_duration"], row["exercise_calories"]) == (2, 40.0, 400)
@@ -179,7 +179,7 @@ def test_exercise_same_logid_with_different_values_keeps_the_last_file(two_layou
     edited = session("03/20/24 07:00:00", 12, 120, 100, log_id=1)
     split_dir, _ = two_layouts(GLOBAL, ["exercise-0.json", "exercise-100.json"],
                                [[first], [edited]], "unused.json")
-    df = load(split_dir, GLOBAL, "exercise-*.json", parsers.parse_exercise_json,
+    df = load(split_dir, GLOBAL, "exercise-*.json", parser("exercise"),
               S["exercise"].rules)
     row = df.loc["2024-03-20"]
     assert (row["exercise_count"], row["exercise_duration"], row["exercise_calories"]) == (1, 12.0, 120)
@@ -193,7 +193,7 @@ def test_split_day_of_heart_rate_recomputes_min_max_avg(two_layouts):
     df = same_rows(two_layouts, GLOBAL,
                    ["heart_rate-2024-03-19.json", "heart_rate-2024-03-20.json"], parts,
                    "heart_rate-2024-03-19.json", "heart_rate-*.json",
-                   etl.parsers.heart_rate_intraday_detail, S["heart_rate"].rules)
+                   parser("heart_rate"), S["heart_rate"].rules)
     assert df.loc["2024-03-20"].tolist() == [55, 100, 78.4]    # 627 / 8 = 78.375
     assert list(df.columns) == ["min_bpm", "max_bpm", "avg_bpm"]
 
@@ -206,7 +206,7 @@ def test_split_day_of_zone_minutes_sums(tmp_path):
         header + "2024-03-20T10:00:00Z,LIGHT\n2024-03-20T10:01:00Z,MODERATE\n")
     (folder / "time_in_heart_rate_zone_2024-03-20.csv").write_text(
         header + "2024-03-20T22:00:00Z,LIGHT\n2024-03-20T22:01:00Z,VIGOROUS\n")
-    df = load(tmp_path, ZONES, "time_in_heart_rate_zone_*.csv", parsers.parse_active_zones_csv,
+    df = load(tmp_path, ZONES, "time_in_heart_rate_zone_*.csv", parser("active_zones"),
               S["active_zones"].rules)
     row = df.loc["2024-03-20"]
     assert (row["zone_light"], row["zone_moderate"], row["zone_vigorous"]) == (2, 1, 1)
@@ -219,7 +219,7 @@ def test_snapshot_value_comes_from_the_last_file_in_name_order(tmp_path):
     folder.mkdir()
     for name, bpm in (("resting_heart_rate-2024-03-20.json", 52), ("resting_heart_rate-2024-03-01.json", 61)):
         write_json(folder, name, [{"value": {"date": "03/20/24", "value": bpm}}])
-    df = etl.load_collection(tmp_path, GLOBAL, "resting_heart_rate-*.json", parsers.parse_resting_heart_rate)
+    df = etl.load_collection(tmp_path, GLOBAL, "resting_heart_rate-*.json", parser("resting_heart_rate"))
     assert df["resting_bpm"].tolist() == [52]
 
 
@@ -286,7 +286,7 @@ def test_exercise_aef_without_any_heart_rate_keeps_the_single_file_value(tmp_pat
     folder.mkdir()
     write_json(folder, "exercise-0.json", [session("03/20/24 07:00:00", 10, 100)])
     write_json(folder, "exercise-100.json", [session("03/20/24 12:00:00", 10, 50)])
-    df = etl.load_collection(tmp_path, GLOBAL, "exercise-*.json", parsers.parse_exercise_json,
+    df = etl.load_collection(tmp_path, GLOBAL, "exercise-*.json", parser("exercise"),
                              combine=S["exercise"].rules)
     assert df["exercise_count"].tolist() == [2]
     assert df["exercise_aef"].tolist() == [0.0]

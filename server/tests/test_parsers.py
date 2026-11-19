@@ -2,7 +2,8 @@
 import pandas as pd
 import pytest
 
-from modules import parsers
+from modules import load_plan, parsers
+from modules.sources import Special
 
 GLOBAL = "Global Export Data"
 GOOGLE = "Physical Activity_GoogleData"
@@ -27,8 +28,11 @@ def json_file(tmp_path, text, name="x.json"):
 # --- every parser is registered, so a new one gets a test ---
 
 def test_every_parser_function_is_in_the_table(parser_table):
-    in_module = {n for n in dir(parsers) if n.startswith("parse_")}
-    assert in_module == {f.__name__ for f in parser_table.values()}
+    in_table = {s.key for v in parser_table.values() for s in (v if isinstance(v, tuple) else (v,))}
+    assert in_table == {s.key for s in load_plan.LOAD_PLAN}
+    special = {n for n in dir(parsers) if n.startswith("parse_")}
+    assert special == {s.reader.parse.__name__ for s in load_plan.LOAD_PLAN
+                       if isinstance(s.reader, Special)}
 
 
 # --- resting heart rate ---

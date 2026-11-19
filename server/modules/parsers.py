@@ -124,25 +124,15 @@ def parse_simple_activity_json(file_path):
     return df[[base_name]]
 
 
-def parse_heart_rate_intraday_summary(file_path):
+def parse_heart_rate_intraday(file_path):
     """
-    Parses 'heart_rate-YYYY-MM-DD.json' to get Daily Min, Max, and Avg BPM.
+    Parses 'heart_rate-YYYY-MM-DD.json': daily min, max and average BPM.
 
     Returns a DataFrame indexed by 'date' with 'min_bpm', 'max_bpm' and
-    'avg_bpm', or None when the file has no valid samples.
-    """
-    df = heart_rate_intraday_detail(file_path)
-    if df is None:
-        return None
-    return df[['min_bpm', 'max_bpm', 'avg_bpm']]
-
-
-def heart_rate_intraday_detail(file_path):
-    """
-    Same as parse_heart_rate_intraday_summary, plus two helper columns,
-    '_bpm_sum' and '_bpm_n' (sum and count of the day's samples in this file).
-    They let the ETL recompute the average of a day that is split across two
-    files; the ETL drops every column that starts with an underscore.
+    'avg_bpm', plus two helper columns, '_bpm_sum' and '_bpm_n' (sum and count
+    of the day's samples in this file). They let the ETL recompute the average
+    of a day that is split across two files; the ETL drops every column that
+    starts with an underscore. Returns None when the file has no valid samples.
 
     This source is about 94% of the ETL time, so the ~33,000 samples per file
     are aggregated with plain dicts keyed by day instead of building a pandas
@@ -266,26 +256,6 @@ def parse_calories_intraday(file_path):
     return df.groupby('date')['value'].sum().reset_index().rename(columns={'value': 'calories_total'}).set_index('date')
 
 
-def parse_sleep_json_detailed(file_path):
-    """
-    Parses 'sleep-YYYY-MM-DD.json' (Detailed Logs).
-
-    Extracts specific sleep stages: Deep, Light, REM, and Awake.
-    Handles mapping differences between 'classic' logs (naps) and 'stages' logs.
-
-    Args:
-        file_path (str): Path to the JSON file.
-
-    Returns:
-        pd.DataFrame: Indexed by 'date' with columns: 'sleep_deep', 'sleep_light',
-                      'sleep_rem', 'sleep_awake'. Aggregates multiple sessions per day via sum().
-    """
-    df = sleep_stages_detail(file_path)
-    if df is None:
-        return None
-    return df[['sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake']]
-
-
 class SleepSession(NamedTuple):
     log_id: object
     deep: int
@@ -294,9 +264,17 @@ class SleepSession(NamedTuple):
     awake: int
 
 
-def sleep_stages_detail(file_path):
+def parse_sleep_stages(file_path):
     """
-    Same as parse_sleep_json_detailed, plus a helper column '_sessions': for each
+    Parses 'sleep-YYYY-MM-DD.json' (Detailed Logs).
+
+    Extracts specific sleep stages: Deep, Light, REM and Awake, in minutes.
+    Handles mapping differences between 'classic' logs (naps) and 'stages' logs
+    (asleep counts as light, awake and restless as awake). A day's sessions are
+    added up.
+
+    Returns a DataFrame indexed by 'date' with 'sleep_deep', 'sleep_light',
+    'sleep_rem' and 'sleep_awake', plus a helper column '_sessions': for each
     day, the list of SleepSession (logId, deep, light, rem, awake) of its
     sessions in this file. Consecutive export files can both contain the same
     session; the ETL uses the logId to count it once when it combines a day
@@ -543,3 +521,15 @@ def parse_exercise_json(file_path):
 def parser_for(source: Source):
     """The function path -> DataFrame | None that reads one file of `source`."""
     return source.reader.parse
+
+
+def parse(source: Source, file_path):
+    """Read one file of `source`: the same frame the ETL gets, helper columns included."""
+    return parser_for(source)(file_path)
+
+
+def drop_helpers(df):
+    """The frame without the helper columns (names starting with "_")."""
+    if df is None:
+        return None
+    return df.drop(columns=[c for c in df.columns if str(c).startswith("_")])
