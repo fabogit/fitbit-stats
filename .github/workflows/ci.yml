@@ -95,9 +95,11 @@ jobs:
           workspaces: client/src-tauri -> target
 
       - name: Install system dependencies
+        # Retries and a network timeout keep a slow mirror from hanging the job.
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Create placeholder sidecar
         # Tauri's build script requires the externalBin file to exist, even for
