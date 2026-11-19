@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 import api
 import config
 from modules import metrics
+from modules.run_config import Profile
 
 
 @pytest.fixture
@@ -16,7 +17,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "CLIENT_PUBLIC_DIR", str(tmp_path))
     # Validation only: never run the pipeline.
     async def no_etl(_payload):
-        return None
+        api.etl_run_lock.release()      # like a run that ended at once
     monkeypatch.setattr(api, "run_etl_task", no_etl)
     return TestClient(api.app)
 
@@ -102,7 +103,7 @@ def test_accepted_dob_is_stored_as_iso_string(client, tmp_path):
 @pytest.mark.parametrize("weight", [20, 300])
 @pytest.mark.parametrize("age", [5, 120])
 def test_bmr_is_positive_for_valid_inputs_at_the_bounds(
-        monkeypatch, gender, height, weight, age):
+        gender, height, weight, age):
     if age == 120 and weight == 20 and height == 50:
         # Mifflin-St Jeor itself goes below zero for the lightest, shortest,
         # oldest person the limits allow; not covered by this check.
@@ -110,11 +111,9 @@ def test_bmr_is_positive_for_valid_inputs_at_the_bounds(
     dob = years_ago(age if age == 5 else age + 1, 0 if age == 5 else 1)
     payload_ok = api.ConfigPayload(
         dob=dob, gender=gender, height=height, weight=weight, data_path="x")
-    monkeypatch.setattr(config, "USER_DOB", payload_ok.dob.isoformat())
-    monkeypatch.setattr(config, "USER_GENDER", payload_ok.gender)
-    monkeypatch.setattr(config, "USER_HEIGHT_CM", payload_ok.height)
-    monkeypatch.setattr(config, "USER_WEIGHT_KG", payload_ok.weight)
+    profile = Profile(dob=payload_ok.dob, gender=payload_ok.gender,
+                      height_cm=payload_ok.height, weight_kg=payload_ok.weight)
     index = pd.date_range(date.today() - pd.Timedelta(days=30), periods=31)
     df = pd.DataFrame({"calories_total": 2000.0, "weight": np.nan}, index=index)
-    out = metrics.calculate_metabolic_metrics(df)
+    out = metrics.calculate_metabolic_metrics(df, profile)
     assert (out["bmr"] > 0).all()

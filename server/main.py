@@ -1,28 +1,11 @@
 import argparse
-import os
 import sys
-from modules import etl, metrics
+from datetime import date
+from pathlib import Path
+
 import config
-
-import json
-
-
-def load_session_config():
-    """Loads biometric properties from the local session_config.json if available."""
-    config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, 'r') as f:
-                sc = json.load(f)
-                config.USER_DOB = sc.get('dob', config.USER_DOB)
-                config.USER_HEIGHT_CM = sc.get('height', config.USER_HEIGHT_CM)
-                config.USER_WEIGHT_KG = sc.get('weight', config.USER_WEIGHT_KG)
-                config.USER_GENDER = sc.get('gender', config.USER_GENDER)
-                config.DATA_DIR = sc.get('data_path', config.DATA_DIR)
-                print(
-                    f"   -> Loaded session config: DOB {config.USER_DOB}, {config.USER_HEIGHT_CM}cm, {config.USER_WEIGHT_KG}kg, {config.USER_GENDER}")
-        except Exception as e:
-            print(f"Error loading session config: {e}")
+from modules.pipeline import NoDataError, run_pipeline
+from modules.run_config import EtlConfig, profile_from_mapping, read_session_config
 
 
 def progress(pct, msg):
@@ -30,8 +13,36 @@ def progress(pct, msg):
     print(f"PROGRESS:{pct}:{msg}", flush=True)
 
 
+def build_config(args) -> EtlConfig | None:
+    """The configuration of this run, or None when the biometrics are not set.
+
+    Precedence, per value: command line arguments, then session_config.json
+    (read from the output folder), then the environment.
+    """
+    output_dir = Path(args.out_dir or config.CLIENT_PUBLIC_DIR)
+    session = read_session_config(output_dir)
+    if session:
+        print("   -> Loaded session config")
+
+    values = config.profile_values_from_env()
+    values.update({k: session[k] for k in ("dob", "gender", "height", "weight") if k in session})
+    values.update({k: v for k, v in (("dob", args.dob), ("gender", args.gender),
+                                     ("height", args.height), ("weight", args.weight)) if v})
+    profile = profile_from_mapping(values)
+    if profile is None:
+        return None
+
+    return EtlConfig(
+        data_dir=Path(args.data_dir or session.get("data_path") or config.default_data_dir()),
+        output_dir=output_dir,
+        profile=profile,
+        start_date=args.start_date or config.date_from_env("START_DATE"),
+        end_date=args.end_date or config.date_from_env("END_DATE"),
+    )
+
+
 def main():
-    """Entrypoint for the Fitbit Stats ETL Engine. Orchestrates data merging, metric calculation, and output export."""
+    """Entrypoint for the Fitbit Stats ETL Engine: builds the run configuration and runs the pipeline."""
     parser = argparse.ArgumentParser(description="Fitbit Stats ETL Engine")
     parser.add_argument("--data-dir", type=str,
                         help="Directory containing Fitbit JSON exports")
@@ -45,79 +56,42 @@ def main():
                         help="User weight in kg for BMR calculation default fallback")
     parser.add_argument(
         "--gender", type=str, choices=["male", "female"], help="User gender for BMR calculation")
-    parser.add_argument("--start-date", type=str,
+    parser.add_argument("--start-date", type=date.fromisoformat,
                         help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end-date", type=str, help="End date (YYYY-MM-DD)")
+    parser.add_argument("--end-date", type=date.fromisoformat, help="End date (YYYY-MM-DD)")
 
     args = parser.parse_args()
 
-    # 0. Load shared session config first
     progress(5, "Loading configuration")
-    load_session_config()
-
-    # Override with CLI arguments if provided
-    if args.data_dir:
-        config.DATA_DIR = args.data_dir
-    if args.out_dir:
-        config.CLIENT_PUBLIC_DIR = args.out_dir
-    if args.dob:
-        config.USER_DOB = args.dob
-    if args.height:
-        config.USER_HEIGHT_CM = args.height
-    if args.weight:
-        config.USER_WEIGHT_KG = args.weight
-    if args.gender:
-        config.USER_GENDER = args.gender
-    if args.start_date:
-        config.START_DATE = args.start_date
-    if args.end_date:
-        config.END_DATE = args.end_date
+    try:
+        cfg = build_config(args)
+    except ValueError as e:
+        print(f"\n[main.py] ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # Validation: Ensure we have the metrics
-    if not config.USER_DOB or not config.USER_HEIGHT_CM or not config.USER_GENDER or not config.USER_WEIGHT_KG:
+    if cfg is None:
         print(
             "\n[main.py] ERROR: Biometric metrics (dob, height, weight, gender) are not set.")
         print("Please provide them via CLI or ensure session_config.json contains them.\n")
         return
 
-    # 1. Load & Merge
-    progress(10, "Loading and merging data files")
-    warnings = []
-    df = etl.merge_all_data(progress_callback=progress, warnings=warnings)
-    etl.export_warnings(warnings)
-    for w in warnings:
-        print(f"[main.py] WARNING: skipped {w['file']} ({w['reason']})", file=sys.stderr)
-
-    if df is not None:
-        # 2. Calculate Metrics
-        progress(70, "Calculating readiness metrics")
-        df = metrics.calculate_readiness(df)
-
-        progress(75, "Calculating metabolic metrics")
-        df = metrics.calculate_metabolic_metrics(df)
-
-        progress(80, "Calculating advanced metrics")
-        df = metrics.calculate_advanced_metrics(df)
-
-        # 3. Preview
-        cols = ['resting_bpm', 'readiness_raw', 'bmr',
-                'active_calories', 'sleep_efficiency', 'autonomic_balance']
-        print("\n=== HEAD ===")
-        print(df[[c for c in cols if c in df.columns]].head())
-
-        # 4. Export
-        progress(90, "Exporting analysis CSV")
-        # Required for BRIEFING module, which reads it from CLIENT_PUBLIC_DIR
-        os.makedirs(config.CLIENT_PUBLIC_DIR, exist_ok=True)
-        df.to_csv(os.path.join(config.CLIENT_PUBLIC_DIR, "fitbit_analysis.csv"))
-
-        progress(95, "Exporting dashboard JSON")
-        etl.export_to_json(df)
-
-        progress(100, "Complete")
-    else:
+    try:
+        result = run_pipeline(cfg, progress)
+    except NoDataError as e:
+        for w in e.warnings:
+            print(f"[main.py] WARNING: skipped {w['file']} ({w['reason']})", file=sys.stderr)
         print("[main.py] ERROR: No valid data found in the specified directory.", file=sys.stderr)
         sys.exit(1)
+
+    for w in result.warnings:
+        print(f"[main.py] WARNING: skipped {w['file']} ({w['reason']})", file=sys.stderr)
+
+    # Preview
+    cols = ['resting_bpm', 'readiness_raw', 'bmr',
+            'active_calories', 'sleep_efficiency', 'autonomic_balance']
+    print("\n=== HEAD ===")
+    print(result.df[[c for c in cols if c in result.df.columns]].head())
 
 
 if __name__ == "__main__":

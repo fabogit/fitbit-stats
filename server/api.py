@@ -4,6 +4,8 @@ import multiprocessing
 import os
 import json
 import asyncio
+import threading
+from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import List, Literal
@@ -14,7 +16,12 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import config
 from modules.briefing import get_daily_brief
+from modules.pipeline import NoDataError, run_pipeline
+from modules.run_config import (
+    AGE_YEARS_MAX, AGE_YEARS_MIN, HEIGHT_CM_MAX, HEIGHT_CM_MIN, WEIGHT_KG_MAX, WEIGHT_KG_MIN,
+    EtlConfig, Profile, age_on)
 
 # Change working directory so relative paths in config.py work correctly
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -132,20 +139,6 @@ app.add_middleware(
 )
 
 
-# Biometric limits. Keep identical to client/src/lib/biometrics.ts (all bounds inclusive).
-HEIGHT_CM_MIN = 50
-HEIGHT_CM_MAX = 250
-WEIGHT_KG_MIN = 20
-WEIGHT_KG_MAX = 300
-AGE_YEARS_MIN = 5
-AGE_YEARS_MAX = 120
-
-
-def age_on(dob: date, today: date) -> int:
-    """Completed years between dob and today."""
-    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-
-
 class ConfigPayload(BaseModel):
     dob: date
     gender: Literal["male", "female"]
@@ -235,15 +228,6 @@ def finished_event(status, message, warnings):
 
 def run_etl_sync(payload, loop):
     """Runs the synchronous ETL by sending updates to the queue."""
-    import config
-    from modules import etl, metrics
-
-    config.DATA_DIR = payload.data_path
-    config.USER_DOB = payload.dob.isoformat()
-    config.USER_HEIGHT_CM = payload.height
-    config.USER_WEIGHT_KG = payload.weight
-    config.USER_GENDER = payload.gender
-
     def progress(pct, msg):
         asyncio.run_coroutine_threadsafe(
             manager.broadcast(
@@ -251,72 +235,67 @@ def run_etl_sync(payload, loop):
             loop
         )
 
-    warnings = []
-    try:
-        progress(10, "Loading and merging data files")
-        df = etl.merge_all_data(progress_callback=progress, warnings=warnings)
-        etl.export_warnings(warnings)
-
-        if df is not None:
-            progress(70, "Calculating readiness metrics")
-            df = metrics.calculate_readiness(df)
-
-            progress(75, "Calculating metabolic metrics")
-            df = metrics.calculate_metabolic_metrics(df)
-
-            progress(80, "Calculating advanced metrics")
-            df = metrics.calculate_advanced_metrics(df)
-
-            progress(90, "Exporting analysis CSV")
-            # Required for BRIEFING module
-            df.to_csv(os.path.join(
-                config.CLIENT_PUBLIC_DIR, "fitbit_analysis.csv"))
-
-            progress(95, "Exporting dashboard JSON")
-            etl.export_to_json(df)
-
-            progress(100, "Complete")
-            asyncio.run_coroutine_threadsafe(
-                manager.broadcast(
-                    finished_event("success", "ETL completed successfully", warnings)),
-                loop
-            )
-        else:
-            asyncio.run_coroutine_threadsafe(
-                manager.broadcast(
-                    finished_event("error", "No valid data found.", warnings)),
-                loop
-            )
-    except Exception as e:
+    def finish(status, message, warnings):
         asyncio.run_coroutine_threadsafe(
-            manager.broadcast(
-                finished_event("error", str(e), warnings)),
-            loop
-        )
+            manager.broadcast(finished_event(status, message, warnings)), loop)
+
+    cfg = EtlConfig(
+        data_dir=Path(payload.data_path),
+        output_dir=Path(config.CLIENT_PUBLIC_DIR),
+        profile=Profile(dob=payload.dob, gender=payload.gender,
+                        height_cm=payload.height, weight_kg=payload.weight),
+    )
+    try:
+        result = run_pipeline(cfg, progress)
+        finish("success", "ETL completed successfully", result.warnings)
+    except NoDataError as e:
+        finish("error", "No valid data found.", e.warnings)
+    except Exception as e:
+        logger.exception("ETL run failed")
+        finish("error", str(e), [])
+
+
+# Held from the moment POST /api/start accepts a run until that run has ended,
+# so a second start is refused instead of overlapping the first.
+etl_run_lock = threading.Lock()
 
 
 async def run_etl_task(payload):
-    """Starts the synchronous execution of the ETL in a separate thread."""
-    await manager.broadcast({"event": "etl_progress", "step": "Starting ETL engine...", "progress": 0})
-    loop = asyncio.get_running_loop()
-    await asyncio.to_thread(run_etl_sync, payload, loop)
+    """Starts the synchronous execution of the ETL in a separate thread.
+
+    Releases etl_run_lock, taken by start_etl, whatever the outcome.
+    """
+    try:
+        await manager.broadcast({"event": "etl_progress", "step": "Starting ETL engine...", "progress": 0})
+        loop = asyncio.get_running_loop()
+        await asyncio.to_thread(run_etl_sync, payload, loop)
+    finally:
+        etl_run_lock.release()
 
 
 @app.post("/api/start")
 async def start_etl(payload: ConfigPayload, background_tasks: BackgroundTasks):
-    """Saves biometric configurations and initiates the main ETL pipeline asynchronously via BackgroundTasks."""
-    import config
-    # Save to session_config.json to persist across runs and for watcher
-    session_config = {
-        "dob": payload.dob.isoformat(),
-        "gender": payload.gender,
-        "height": payload.height,
-        "weight": payload.weight,
-        "data_path": payload.data_path
-    }
-    config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
-    with open(config_path, "w") as f:
-        json.dump(session_config, f)
+    """Saves biometric configurations and initiates the main ETL pipeline asynchronously via BackgroundTasks.
+
+    Answers 409, saving nothing and starting nothing, while another run is in progress.
+    """
+    if not etl_run_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="An ETL run is already in progress")
+    try:
+        # Save to session_config.json so the next launch can prefill the form
+        session_config = {
+            "dob": payload.dob.isoformat(),
+            "gender": payload.gender,
+            "height": payload.height,
+            "weight": payload.weight,
+            "data_path": payload.data_path
+        }
+        config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
+        with open(config_path, "w") as f:
+            json.dump(session_config, f)
+    except BaseException:
+        etl_run_lock.release()
+        raise
 
     # Run ETL logic internally without subprocesses
     background_tasks.add_task(run_etl_task, payload)
@@ -339,7 +318,6 @@ async def websocket_status(websocket: WebSocket):
 @app.get("/api/config")
 async def get_config():
     """Retrieves the current user session configuration if it exists."""
-    import config
     config_path = os.path.join(config.CLIENT_PUBLIC_DIR, "session_config.json")
     if os.path.exists(config_path):
         with open(config_path, "r") as f:
@@ -350,7 +328,6 @@ async def get_config():
 @app.get("/api/etl-warnings")
 async def get_etl_warnings():
     """Files skipped by the last ETL run, as [{file, reason}]; empty when none or unknown."""
-    import config
     from modules import etl
     path = os.path.join(config.CLIENT_PUBLIC_DIR, etl.WARNINGS_FILE)
     try:
@@ -364,7 +341,6 @@ async def get_etl_warnings():
 @app.delete("/api/clear")
 async def clear_data():
     """Erases session config and computed dashboard data to simulate a factory reset."""
-    import config
     client_dir = config.CLIENT_PUBLIC_DIR
 
     files_to_remove = [

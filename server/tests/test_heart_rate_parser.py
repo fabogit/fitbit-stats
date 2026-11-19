@@ -2,7 +2,6 @@ import json
 
 import pandas as pd
 
-import config
 from modules import etl, parsers
 
 
@@ -55,12 +54,7 @@ def test_etl_merges_heart_rate_files_in_parallel(tmp_path):
                          [(f"{day} 10:00:00", 60 + i), (f"{day} 10:00:05", 80 + i)])
         (folder / f"calories-2024-03-{i + 1:02d}.json").write_text(
             json.dumps([{"dateTime": f"{day} 12:00:00", "value": "10"}]))
-    saved = (config.DATA_DIR, config.START_DATE, config.END_DATE)
-    config.DATA_DIR, config.START_DATE, config.END_DATE = str(tmp_path), None, None
-    try:
-        df = etl.merge_all_data()
-    finally:
-        config.DATA_DIR, config.START_DATE, config.END_DATE = saved
+    df = etl.merge_all_data(tmp_path)
     assert len(df) == n
     assert df["min_bpm"].tolist() == [60 + i for i in range(n)]
     assert df["max_bpm"].tolist() == [80 + i for i in range(n)]

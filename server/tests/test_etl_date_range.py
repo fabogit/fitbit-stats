@@ -1,18 +1,8 @@
 import json
+from datetime import date
 
-import pytest
-
-import config
 from modules import etl
 
-
-@pytest.fixture(autouse=True)
-def _restore_config():
-    saved = (config.DATA_DIR, config.START_DATE, config.END_DATE)
-    config.START_DATE = None
-    config.END_DATE = None
-    yield
-    config.DATA_DIR, config.START_DATE, config.END_DATE = saved
 
 
 def write_calories(data_dir, file_date, days):
@@ -24,9 +14,8 @@ def write_calories(data_dir, file_date, days):
     path.write_text(json.dumps(rows))
 
 
-def merged_dates(data_dir):
-    config.DATA_DIR = str(data_dir)
-    df = etl.merge_all_data()
+def merged_dates(data_dir, start=None, end=None):
+    df = etl.merge_all_data(data_dir, start, end)
     return [d.strftime("%Y-%m-%d") for d in df.index]
 
 
@@ -54,16 +43,6 @@ def test_two_runs_in_one_process_cover_their_own_range(tmp_path):
     assert merged_dates(second) == ["2024-06-01", "2024-06-25"]
 
 
-def test_config_dates_unchanged_after_run(tmp_path):
-    write_calories(tmp_path, "2024-03-01", ["03/01/24", "03/10/24"])
-    merged_dates(tmp_path)
-    assert config.START_DATE is None
-    assert config.END_DATE is None
-
-
 def test_explicit_dates_still_filter(tmp_path):
     write_calories(tmp_path, "2024-03-01", ["03/01/24", "03/10/24", "03/20/24"])
-    config.START_DATE = "2024-03-05"
-    config.END_DATE = "2024-03-15"
-    assert merged_dates(tmp_path) == ["2024-03-10"]
-    assert config.START_DATE == "2024-03-05"
+    assert merged_dates(tmp_path, date(2024, 3, 5), date(2024, 3, 15)) == ["2024-03-10"]

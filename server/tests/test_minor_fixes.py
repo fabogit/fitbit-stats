@@ -1,23 +1,11 @@
 import json
 
 import pandas as pd
-import pytest
 from fastapi.testclient import TestClient
 
 import api
-import config
 from modules import briefing, etl, metrics
 
-
-@pytest.fixture(autouse=True)
-def _restore_config():
-    saved = (config.DATA_DIR, config.START_DATE, config.END_DATE,
-             config.CLIENT_PUBLIC_DIR)
-    config.START_DATE = None
-    config.END_DATE = None
-    yield
-    (config.DATA_DIR, config.START_DATE, config.END_DATE,
-     config.CLIENT_PUBLIC_DIR) = saved
 
 
 # --- /api/brief: a missing brief is a 404, not a 500 ---
@@ -46,7 +34,6 @@ def test_brief_unexpected_error_is_still_500(monkeypatch):
 
 def test_export_writes_dashboard_json_once(tmp_path, monkeypatch):
     out = tmp_path / "shared"
-    config.CLIENT_PUBLIC_DIR = str(out)
     calls = []
     real = pd.DataFrame.to_json
 
@@ -58,7 +45,7 @@ def test_export_writes_dashboard_json_once(tmp_path, monkeypatch):
     df = pd.DataFrame({"steps": [1, 2]},
                       index=pd.to_datetime(["2024-01-01", "2024-01-02"]))
     df.index.name = "date"
-    etl.export_to_json(df)
+    etl.export_to_json(df, out)
     assert calls == [str(out / "dashboard_data.json")]
     assert len(json.loads((out / "dashboard_data.json").read_text())) == 2
 
@@ -81,8 +68,7 @@ def write_export(data_dir, sleep_days, all_days):
 
 
 def run_metrics(data_dir):
-    config.DATA_DIR = str(data_dir)
-    df = etl.merge_all_data()
+    df = etl.merge_all_data(data_dir)
     return metrics.calculate_advanced_metrics(df)
 
 

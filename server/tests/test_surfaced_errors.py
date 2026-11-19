@@ -25,39 +25,35 @@ def write_export(data_dir, bad_json=False, bad_csv=False):
         (stress / "Stress Score.csv").write_bytes(b"\xff\xfe\x00\x81\x82 garbage\n\xc3\x28")
 
 
-def test_unreadable_json_is_reported_by_name(tmp_path, monkeypatch):
+def test_unreadable_json_is_reported_by_name(tmp_path):
     write_export(tmp_path, bad_json=True)
-    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
     warnings = []
-    df = etl.merge_all_data(warnings=warnings)
+    df = etl.merge_all_data(tmp_path, warnings=warnings)
     assert df is not None  # the readable file still produces data
     assert [w["file"] for w in warnings] == ["steps-2024-01-01.json"]
     assert str(tmp_path) not in json.dumps(warnings)
 
 
-def test_unreadable_csv_is_reported_by_name(tmp_path, monkeypatch):
+def test_unreadable_csv_is_reported_by_name(tmp_path):
     write_export(tmp_path, bad_csv=True)
-    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
     warnings = []
-    etl.merge_all_data(warnings=warnings)
+    etl.merge_all_data(tmp_path, warnings=warnings)
     assert [w["file"] for w in warnings] == ["Stress Score.csv"]
     assert str(tmp_path) not in json.dumps(warnings)
 
 
-def test_clean_run_has_no_warnings(tmp_path, monkeypatch):
+def test_clean_run_has_no_warnings(tmp_path):
     write_export(tmp_path)
-    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
     warnings = []
-    etl.merge_all_data(warnings=warnings)
+    etl.merge_all_data(tmp_path, warnings=warnings)
     assert warnings == []
 
 
-def test_missing_files_are_not_warnings(tmp_path, monkeypatch):
+def test_missing_files_are_not_warnings(tmp_path):
     # A collection with no files at all is an empty result, not an error.
     (tmp_path / GLOBAL).mkdir()
-    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
     warnings = []
-    assert etl.merge_all_data(warnings=warnings) is None
+    assert etl.merge_all_data(tmp_path, warnings=warnings) is None
     assert warnings == []
 
 

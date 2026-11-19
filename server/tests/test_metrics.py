@@ -28,82 +28,75 @@ def test_readiness_missing_columns_adds_nothing():
 
 # --- weight ---
 
-def test_weight_is_interpolated_between_weigh_ins(set_profile):
-    set_profile()
+def test_weight_is_interpolated_between_weigh_ins(make_profile):
     df = frame({"calories_total": [2000.0] * 5, "weight": [80.0, np.nan, np.nan, np.nan, 78.0]})
-    out = metrics.calculate_metabolic_metrics(df)
+    out = metrics.calculate_metabolic_metrics(df, make_profile())
     assert out["weight_filled"].tolist() == [80.0, 79.5, 79.0, 78.5, 78.0]
 
 
-def test_configured_weight_is_used_without_weigh_ins(set_profile):
-    set_profile(weight=75.0)
-    out = metrics.calculate_metabolic_metrics(frame({"calories_total": [2000.0] * 3}))
+def test_configured_weight_is_used_without_weigh_ins(make_profile):
+    out = metrics.calculate_metabolic_metrics(frame({"calories_total": [2000.0] * 3}),
+                                              make_profile(weight=75.0))
     assert out["weight_filled"].tolist() == [75.0] * 3
 
 
-def test_configured_weight_fills_days_before_the_first_weigh_in(set_profile):
-    set_profile(weight=75.0)
+def test_configured_weight_fills_days_before_the_first_weigh_in(make_profile):
     df = frame({"calories_total": [2000.0] * 4, "weight": [np.nan, np.nan, 80.0, 80.0]})
-    out = metrics.calculate_metabolic_metrics(df)
+    out = metrics.calculate_metabolic_metrics(df, make_profile())
     assert out["weight_filled"].tolist()[:2] == [75.0, 75.0]
 
 
 # --- BMR, active calories, intensity ---
 
-def metabolic_row(set_profile, calories, minutes=(60, 20, 10), **profile):
-    set_profile(**profile)
+def metabolic_row(make_profile, calories, minutes=(60, 20, 10), **profile):
     df = frame({"calories_total": [calories], "weight": [80.0],
                 "lightly_active_minutes": [float(minutes[0])],
                 "moderately_active_minutes": [float(minutes[1])],
                 "very_active_minutes": [float(minutes[2])]})
-    return metrics.calculate_metabolic_metrics(df).iloc[0]
+    return metrics.calculate_metabolic_metrics(df, make_profile(**profile)).iloc[0]
 
 
-def test_bmr_male_known_profile(set_profile):
+def test_bmr_male_known_profile(make_profile):
     # born 1984-03-28, row 2024-03-28: 14610 days / 365.25 = 40.0 years
     # 10 x 80 + 6.25 x 180 - 5 x 40 + 5 = 800 + 1125 - 200 + 5
-    assert metabolic_row(set_profile, 2500.0)["bmr"] == pytest.approx(1730.0)
+    assert metabolic_row(make_profile, 2500.0)["bmr"] == pytest.approx(1730.0)
 
 
-def test_bmr_female_known_profile(set_profile):
+def test_bmr_female_known_profile(make_profile):
     # same profile with the female constant: 800 + 1125 - 200 - 161
-    assert metabolic_row(set_profile, 2500.0, gender="female")["bmr"] == pytest.approx(1564.0)
+    assert metabolic_row(make_profile, 2500.0, gender="female")["bmr"] == pytest.approx(1564.0)
 
 
-def test_bmr_age_follows_the_row_date(set_profile):
-    set_profile()
+def test_bmr_age_follows_the_row_date(make_profile):
     df = frame({"calories_total": [2500.0, 2500.0], "weight": [80.0, 80.0]})
-    out = metrics.calculate_metabolic_metrics(df)
+    out = metrics.calculate_metabolic_metrics(df, make_profile())
     # one day later: age 14611 / 365.25 = 40.00274 -> 1730 - 5 x 0.00274 = 1729.986
     assert out["bmr"].iloc[1] == pytest.approx(1729.986, abs=0.01)
 
 
-def test_active_calories_and_intensity(set_profile):
-    row = metabolic_row(set_profile, 2500.0)
+def test_active_calories_and_intensity(make_profile):
+    row = metabolic_row(make_profile, 2500.0)
     assert row["active_calories"] == pytest.approx(770.0)             # 2500 - 1730
     assert row["total_active_minutes"] == 90
     assert row["intensity_index"] == pytest.approx(770.0 / 90)
 
 
-def test_active_calories_never_negative(set_profile):
-    row = metabolic_row(set_profile, 1500.0)                          # below the BMR
+def test_active_calories_never_negative(make_profile):
+    row = metabolic_row(make_profile, 1500.0)                          # below the BMR
     assert row["active_calories"] == 0.0
     assert row["intensity_index"] == 0
 
 
-def test_intensity_is_zero_without_active_minutes(set_profile):
-    row = metabolic_row(set_profile, 2500.0, minutes=(0, 0, 0))
+def test_intensity_is_zero_without_active_minutes(make_profile):
+    row = metabolic_row(make_profile, 2500.0, minutes=(0, 0, 0))
     assert row["intensity_index"] == 0
 
 
-@pytest.mark.parametrize("missing", ["gender", "dob", "height"])
-def test_incomplete_profile_gives_no_positive_bmr(set_profile, missing):
-    # Not pinned on purpose: whether an incomplete profile gives 0.0 or NaN is
+def test_missing_profile_gives_no_positive_bmr():
+    # Not pinned on purpose: whether a missing profile gives 0.0 or NaN is
     # undecided. Only: no exception, and no positive BMR or active calories.
-    empty = {"gender": "", "dob": "", "height": 0}
-    set_profile(**{missing: empty[missing]})
     df = frame({"calories_total": [2500.0], "weight": [80.0]})
-    out = metrics.calculate_metabolic_metrics(df)
+    out = metrics.calculate_metabolic_metrics(df, None)
     assert not (out["bmr"] > 0).any()
     assert not (out["active_calories"] > 0).any()
 

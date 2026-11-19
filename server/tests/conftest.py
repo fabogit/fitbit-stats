@@ -1,17 +1,20 @@
 """Shared helpers for the parser, metric and ETL tests.
 
-Everything that touches the global ``config`` module or lists the parsers is
-kept here, so a later refactor of the configuration or of the parsers has a
-single place to adapt.
+Everything that lists the parsers or builds the default profile is kept
+here, so a later refactor of the parsers has a single place to adapt.
 """
+from datetime import date
 from pathlib import Path
 
 import pytest
 
-import config
-from modules import etl, metrics, parsers
+from modules import parsers, pipeline
+from modules.run_config import EtlConfig, Profile
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+# The profile the golden values of the tests are worked out with.
+DEFAULT_PROFILE = Profile(dob=date(1984, 3, 28), gender="male", height_cm=180, weight_kg=75.0)
 
 # One entry per source: key -> parser function. Adapt this table, not the
 # individual tests, if the parsers are ever reorganised.
@@ -58,39 +61,29 @@ def export_dir():
 
 
 @pytest.fixture
-def configure_etl(monkeypatch):
-    """Point the ETL at a data folder and an optional date range."""
-    def _configure(data_dir, start=None, end=None):
-        monkeypatch.setattr(config, "DATA_DIR", str(data_dir))
-        monkeypatch.setattr(config, "START_DATE", start)
-        monkeypatch.setattr(config, "END_DATE", end)
-    return _configure
+def make_profile():
+    """make_profile(gender=..., height=...) -> a Profile, DEFAULT_PROFILE with overrides."""
+    def _make(gender=DEFAULT_PROFILE.gender, dob=DEFAULT_PROFILE.dob,
+              height=DEFAULT_PROFILE.height_cm, weight=DEFAULT_PROFILE.weight_kg):
+        return Profile(dob=dob, gender=gender, height_cm=height, weight_kg=weight)
+    return _make
 
 
 @pytest.fixture
-def set_profile(monkeypatch):
-    """Set the user profile the metabolic metrics read (empty value = not set)."""
-    def _set(gender="male", dob="1984-03-28", height=180, weight=75.0):
-        monkeypatch.setattr(config, "USER_GENDER", gender)
-        monkeypatch.setattr(config, "USER_DOB", dob)
-        monkeypatch.setattr(config, "USER_HEIGHT_CM", height)
-        monkeypatch.setattr(config, "USER_WEIGHT_KG", weight)
-    return _set
+def make_config(tmp_path):
+    """make_config(data_dir, start=None, end=None, profile=DEFAULT_PROFILE) -> an EtlConfig.
 
-
-@pytest.fixture
-def run_pipeline(configure_etl, set_profile):
-    """Merge the export and apply the three metric steps, like main.py and api.py.
-
-    NOTE: this repeats the call order used by main.py and api.py. Once the
-    pipeline refactor provides one shared pipeline function, replace the body
-    of this fixture with a call to it.
+    Outputs go to a folder of the test's tmp_path, never to the default folder.
     """
+    def _make(data_dir, start=None, end=None, profile=DEFAULT_PROFILE, output_dir=None):
+        return EtlConfig(data_dir=Path(data_dir), output_dir=Path(output_dir or tmp_path / "output"),
+                         profile=profile, start_date=start, end_date=end)
+    return _make
+
+
+@pytest.fixture
+def run_pipeline(make_config):
+    """Run the pipeline on an export and return the final DataFrame."""
     def _run(data_dir, start=None, end=None):
-        configure_etl(data_dir, start, end)
-        set_profile()
-        df = etl.merge_all_data()
-        df = metrics.calculate_readiness(df)
-        df = metrics.calculate_metabolic_metrics(df)
-        return metrics.calculate_advanced_metrics(df)
+        return pipeline.run_pipeline(make_config(data_dir, start, end)).df
     return _run
