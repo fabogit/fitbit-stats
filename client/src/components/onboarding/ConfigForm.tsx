@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/select";
 import { CheckCircle2, AlertCircle, Search, Loader2, Trash2 } from "lucide-react";
 import { useAppDispatch } from "../../store/store";
-import { fetchHealthData, setIsProcessing, setEtlProgress } from "../../features/dashboard/dashboardSlice";
-import { apiFetch, openStatusSocket, waitForServer } from "@/lib/api";
+import { fetchHealthData } from "../../features/dashboard/dashboardSlice";
+import { BUSY_MESSAGE, startJob } from "../../features/job/startJob";
+import { apiFetch, waitForServer } from "@/lib/api";
 import {
   HEIGHT_CM_MIN,
   HEIGHT_CM_MAX,
@@ -182,8 +183,13 @@ export function ConfigForm({
     
     setLoading(true);
     try {
-      await apiFetch("/api/clear", { method: "DELETE" });
-      
+      const resp = await apiFetch("/api/clear", { method: "DELETE" });
+      if (resp.status === 409) {
+        alert("A calculation is running. Wait for it to finish before deleting data.");
+        return;
+      }
+      if (!resp.ok) throw new Error(`Clear request failed (HTTP ${resp.status})`);
+
       setFormData({ dob: "", gender: "", height: "", weight: "", data_path: defaultDataPath() });
       setPathStatus("idle");
       // Calling fetchHealthData will reload empty state causing NoDataState to re-render in Dashboard
@@ -234,75 +240,27 @@ export function ConfigForm({
     }
 
     setLoading(true);
-    dispatch(setIsProcessing(true));
-
-    let ws: WebSocket | null = null;
     try {
-      // Open the status channel first: events broadcast before a client is
-      // connected are lost, so the ETL must not start until the socket is open.
-      const socket = await openStatusSocket();
-      ws = socket;
-      await new Promise<void>((resolve, reject) => {
-        socket.onopen = () => resolve();
-        socket.onerror = () => reject(new Error("WebSocket connection failed"));
+      const result = await startJob(dispatch, {
+        dob: formData.dob,
+        gender: formData.gender,
+        height: heightVal,
+        weight: weightVal,
+        data_path: pathVal,
       });
-
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.event === "etl_progress") {
-            dispatch(setEtlProgress({ progress: data.progress, step: data.step }));
-          } else if (data.event === "etl_finished") {
-            dispatch(setIsProcessing(false));
-            socket.close();
-            if (data.status === "success") {
-              dispatch(fetchHealthData({ force: true }));
-            } else {
-              alert("Error during ETL: " + data.message);
-            }
-          }
-        } catch (e) {
-          console.error("Error parsing WS message:", e);
-        }
-      };
-
-      socket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        dispatch(setIsProcessing(false));
-        socket.close();
-        alert("WebSocket disconnected unexpectedly.");
-      };
-
-      const resp = await apiFetch("/api/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dob: formData.dob,
-          gender: formData.gender,
-          height: heightVal,
-          weight: weightVal,
-          data_path: pathVal,
-        }),
-      });
-
-      if (!resp.ok) {
-        console.error("Failed to start processing");
-        socket.onerror = null;
-        socket.close();
-        dispatch(setIsProcessing(false));
-        setLoading(false);
+      if (result.kind === "failed") {
         alert("Error starting calculation on the server.");
-      } else {
-        // Close form instantly; the already-open socket keeps listening
-        onSuccess();
+        setLoading(false);
+        return;
       }
+      // Another run is in progress: its progress is now shown, and the values
+      // just entered were not saved or used.
+      if (result.kind === "busy") alert(BUSY_MESSAGE);
+      // Close the form; the job status in the store shows the progress.
+      setLoading(false);
+      onSuccess();
     } catch (err) {
       console.error(err);
-      if (ws) {
-        ws.onerror = null;
-        ws.close();
-      }
-      dispatch(setIsProcessing(false));
       setLoading(false);
       alert("Failed to connect to the local server.");
     }

@@ -1,6 +1,7 @@
 import { BarChart3, Calculator, PlusCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppSelector } from "../../store/store";
+import { selectIsRunning, selectProgress, selectStep } from "@/features/job/jobSlice";
 
 interface NoDataStateProps {
   onAction?: () => void;
@@ -13,7 +14,10 @@ export function NoDataState({
   title = "No Data Calculated Yet", 
   description = "Connect your Fitbit export folder and run your first calculation to see your health analytics."
 }: NoDataStateProps) {
-  const { isProcessing, etlProgress, etlStep, data, dateRange } = useAppSelector((state) => state.dashboard);
+  const isProcessing = useAppSelector(selectIsRunning);
+  const etlProgress = useAppSelector(selectProgress);
+  const etlStep = useAppSelector(selectStep);
+  const { data, dateRange } = useAppSelector((state) => state.dashboard);
 
   // Data exists but the selected period contains none of it: say so, and do
   // not send the user back to the first-run calculation.

@@ -1,5 +1,4 @@
 import glob
-import json
 import os
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
@@ -8,7 +7,6 @@ from modules import parsers
 
 
 JSON_FILE = "dashboard_data.json"
-WARNINGS_FILE = "etl_warnings.json"
 
 
 def filter_by_date(df, start=None, end=None):
@@ -78,16 +76,24 @@ def _parse_files(files, parser_func):
     return [work(f) for f in files]
 
 
-def _skip_reason(error, path):
-    """Short, user-facing reason a file was skipped. Never contains a folder path."""
+def describe_error(error, paths=()):
+    """Short, user-facing text for an exception. Never contains any of `paths`.
+
+    Used for the reason a file was skipped and for the message of a failed run.
+    """
     if isinstance(error, OSError) and error.strerror:
         text = error.strerror
     else:
         text = str(error) or "no details"
-    for p in (path, os.path.dirname(path)):
-        if p:
-            text = text.replace(p, "")
+    # Longest first: a folder is a prefix of the paths inside it.
+    for p in sorted({str(p) for p in paths if p}, key=len, reverse=True):
+        text = text.replace(p, "")
     return f"{type(error).__name__}: {' '.join(text.split())}"[:200]
+
+
+def _skip_reason(error, path):
+    """Short, user-facing reason a file was skipped. Never contains a folder path."""
+    return describe_error(error, (path, os.path.dirname(path)))
 
 
 # How the rows of the same day coming from different files of one source are
@@ -394,15 +400,3 @@ def export_to_json(df, output_dir, filename=JSON_FILE):
     export_df['date'] = export_df['date'].dt.strftime('%Y-%m-%d')
 
     export_df.to_json(output_path, orient='records')
-
-
-def export_warnings(warnings, output_dir, filename=WARNINGS_FILE):
-    """Writes the skipped-file warnings of the last run next to dashboard_data.json.
-
-    An empty list is written too, so a clean run clears the warnings of the
-    previous one.
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, filename)
-    with open(path, "w") as f:
-        json.dump(warnings, f)

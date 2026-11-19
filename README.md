@@ -27,7 +27,7 @@ The project has evolved into a unified **FastAPI backend** that serves both the 
 
 - **Unified API:** Centralizes ETL, metabolic math, and health briefing logic.
 - **Asynchronous Processing:** Heavy Data Merging (ETL) is spawned seamlessly into **BackgroundTasks**, eliminating HTTP route blocking.
-- **Real-time Updates:** A persistent, full-duplex **WebSocket (`/ws/status`)** continuously streams real-time status updates directly to the Frontend, eliminating polling and providing robust scalability.
+- **Calculation Status:** The server keeps the status of the last calculation (`GET /api/status`: progress, outcome, skipped files). A **WebSocket (`/ws/status`)** sends that status as soon as a client connects and on every change, so reloading the page, opening a second window or restarting the server never loses track of a run; the last status is saved in `last_run.json` next to the dashboard data.
 
 ---
 

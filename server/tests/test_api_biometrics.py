@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 import api
 import config
 from modules import metrics
+from modules.pipeline import PipelineResult
 from modules.run_config import Profile
 
 
@@ -16,9 +17,8 @@ def client(monkeypatch, tmp_path):
     monkeypatch.delenv("FITSTATS_API_TOKEN", raising=False)
     monkeypatch.setattr(config, "CLIENT_PUBLIC_DIR", str(tmp_path))
     # Validation only: never run the pipeline.
-    async def no_etl(_payload):
-        api.etl_run_lock.release()      # like a run that ended at once
-    monkeypatch.setattr(api, "run_etl_task", no_etl)
+    monkeypatch.setattr(api, "run_pipeline",
+                        lambda cfg, progress, warnings: PipelineResult(df=None, warnings=warnings))
     return TestClient(api.app)
 
 
@@ -39,12 +39,14 @@ def payload(**overrides):
 
 
 def start(client, **overrides):
-    return client.post("/api/start", json=payload(**overrides))
+    response = client.post("/api/start", json=payload(**overrides))
+    api.job_manager.join(10)    # the run must end before the next start
+    return response
 
 
 def test_valid_payload_is_accepted(client):
-    assert start(client).status_code == 200
-    assert start(client, gender="male").status_code == 200
+    assert start(client).status_code == 202
+    assert start(client, gender="male").status_code == 202
 
 
 @pytest.mark.parametrize("gender", ["", "other", "Male", "FEMALE", " male"])
@@ -67,17 +69,17 @@ def test_too_old_dob_is_rejected(client):
 
 
 def test_dob_age_boundaries(client):
-    assert start(client, dob=years_ago(api.AGE_YEARS_MAX).isoformat()).status_code == 200
-    assert start(client, dob=years_ago(api.AGE_YEARS_MAX + 1, 1).isoformat()).status_code == 200
+    assert start(client, dob=years_ago(api.AGE_YEARS_MAX).isoformat()).status_code == 202
+    assert start(client, dob=years_ago(api.AGE_YEARS_MAX + 1, 1).isoformat()).status_code == 202
     assert start(client, dob=years_ago(api.AGE_YEARS_MAX + 1).isoformat()).status_code == 422
-    assert start(client, dob=years_ago(api.AGE_YEARS_MIN).isoformat()).status_code == 200
+    assert start(client, dob=years_ago(api.AGE_YEARS_MIN).isoformat()).status_code == 202
     assert start(client, dob=years_ago(api.AGE_YEARS_MIN, 1).isoformat()).status_code == 422
 
 
 def test_height_bounds_are_inclusive(client):
     assert api.HEIGHT_CM_MIN == 50 and api.HEIGHT_CM_MAX == 250
-    assert start(client, height=50).status_code == 200
-    assert start(client, height=250).status_code == 200
+    assert start(client, height=50).status_code == 202
+    assert start(client, height=250).status_code == 202
     assert start(client, height=49).status_code == 422
     assert start(client, height=251).status_code == 422
     assert start(client, height=41).status_code == 422
@@ -86,14 +88,14 @@ def test_height_bounds_are_inclusive(client):
 
 def test_weight_bounds_are_inclusive(client):
     assert api.WEIGHT_KG_MIN == 20 and api.WEIGHT_KG_MAX == 300
-    assert start(client, weight=20).status_code == 200
-    assert start(client, weight=300).status_code == 200
+    assert start(client, weight=20).status_code == 202
+    assert start(client, weight=300).status_code == 202
     assert start(client, weight=19.9).status_code == 422
     assert start(client, weight=300.1).status_code == 422
 
 
 def test_accepted_dob_is_stored_as_iso_string(client, tmp_path):
-    assert start(client, dob="1990-06-15").status_code == 200
+    assert start(client, dob="1990-06-15").status_code == 202
     saved = (tmp_path / "session_config.json").read_text()
     assert '"dob": "1990-06-15"' in saved
 

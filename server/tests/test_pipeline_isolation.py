@@ -14,7 +14,7 @@ from modules.run_config import EtlConfig, Profile
 
 SERVER = Path(__file__).resolve().parents[1]
 GENERATOR = SERVER.parent / "scripts" / "generate_sample_export.py"
-OUTPUTS = ("dashboard_data.json", "fitbit_analysis.csv", "etl_warnings.json")
+OUTPUTS = ("dashboard_data.json", "fitbit_analysis.csv")
 
 
 def load_generator():

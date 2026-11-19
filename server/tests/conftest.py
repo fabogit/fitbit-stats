@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+import api
+from jobs import JobManager
 from modules import parsers, pipeline
 from modules.run_config import EtlConfig, Profile
 
@@ -87,3 +89,12 @@ def run_pipeline(make_config):
     def _run(data_dir, start=None, end=None):
         return pipeline.run_pipeline(make_config(data_dir, start, end)).df
     return _run
+
+
+@pytest.fixture(autouse=True)
+def fresh_job_manager(monkeypatch):
+    """Every test gets its own job manager, so no run or status leaks into the next test."""
+    job = JobManager(api._run_pipeline, api._last_run_path, on_change=api.manager.notify)
+    monkeypatch.setattr(api, "job_manager", job)
+    yield job
+    job.join(10)
