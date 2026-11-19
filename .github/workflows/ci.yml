@@ -34,7 +34,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 10
+          package_json_file: client/package.json # pnpm version comes from "packageManager"
           cache: true
           cache_dependency_path: client/pnpm-lock.yaml
 
