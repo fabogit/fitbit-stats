@@ -1,0 +1,2 @@
+# The repository ignores *.csv; these are invented fixtures and must be tracked.
+!*.csv

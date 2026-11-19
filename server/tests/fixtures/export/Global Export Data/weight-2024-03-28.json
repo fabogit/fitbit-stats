@@ -1,0 +1,26 @@
+[
+ {
+  "logId": 1,
+  "weight": 176.4,
+  "bmi": 24.7,
+  "date": "03/28/24",
+  "time": "07:30:00",
+  "source": "API"
+ },
+ {
+  "logId": 2,
+  "weight": 198.4,
+  "bmi": 27.8,
+  "date": "03/28/24",
+  "time": "20:00:00",
+  "source": "API"
+ },
+ {
+  "logId": 3,
+  "weight": 171.9,
+  "bmi": 24.1,
+  "date": "04/01/24",
+  "time": "07:30:00",
+  "source": "API"
+ }
+]
