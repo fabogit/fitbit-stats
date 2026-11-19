@@ -23,6 +23,14 @@ import {
   dobBounds,
 } from "@/lib/biometrics";
 
+// The packaged desktop server resolves relative paths against its own
+// temporary extraction folder, so there the folder must be absolute.
+const RELATIVE_PATH_ERROR = "Use an absolute path or Browse.";
+const isAbsolutePath = (p: string) => /^([/\\]|[A-Za-z]:[/\\])/.test(p);
+const isDesktopRelativePath = (p: string) =>
+  isTauri() && p.trim() !== "" && !isAbsolutePath(p.trim());
+const defaultDataPath = () => (isTauri() ? "" : "./data");
+
 interface ConfigFormProps {
   onSuccess: () => void;
   submitLabel?: string;
@@ -39,7 +47,7 @@ export function ConfigForm({
     gender: "",
     height: "",
     weight: "",
-    data_path: "./data",
+    data_path: defaultDataPath(),
   });
   const [touched, setTouched] = useState({ dob: false, height: false, weight: false });
   const [pathStatus, setPathStatus] = useState<
@@ -74,7 +82,12 @@ export function ConfigForm({
               gender: data.gender || prev.gender,
               height: data.height ? String(data.height) : prev.height,
               weight: data.weight ? String(data.weight) : prev.weight,
-              data_path: data.data_path || prev.data_path,
+              // A relative path saved by an older desktop version cannot be
+              // resolved there: leave the field empty instead.
+              data_path:
+                data.data_path && !isDesktopRelativePath(data.data_path)
+                  ? data.data_path
+                  : prev.data_path,
             }));
             if (data.data_path) {
                setPathStatus("idle");
@@ -128,6 +141,11 @@ export function ConfigForm({
       setPathStatus("idle");
       return;
     }
+    if (isDesktopRelativePath(pathToCheck)) {
+      setPathStatus("invalid");
+      setPathError(RELATIVE_PATH_ERROR);
+      return;
+    }
     setPathStatus("checking");
 
     try {
@@ -166,7 +184,7 @@ export function ConfigForm({
     try {
       await apiFetch("/api/clear", { method: "DELETE" });
       
-      setFormData({ dob: "", gender: "", height: "", weight: "", data_path: "./data" });
+      setFormData({ dob: "", gender: "", height: "", weight: "", data_path: defaultDataPath() });
       setPathStatus("idle");
       // Calling fetchHealthData will reload empty state causing NoDataState to re-render in Dashboard
       dispatch(fetchHealthData({ force: true }));
@@ -207,6 +225,11 @@ export function ConfigForm({
     }
     if (!pathVal) {
       alert("Datastore path is required");
+      return;
+    }
+    if (isDesktopRelativePath(pathVal)) {
+      setPathStatus("invalid");
+      setPathError(RELATIVE_PATH_ERROR);
       return;
     }
 
@@ -394,7 +417,7 @@ export function ConfigForm({
           <Input
             id="data_path"
             type="text"
-            placeholder="./data"
+            placeholder={isTauri() ? "Click Browse to choose the folder" : "./data"}
             value={formData.data_path}
             onFocus={(e) => e.target.select()}
             // The desktop WebView clears the selection on the click that gave
@@ -455,9 +478,11 @@ export function ConfigForm({
           </p>
         )}
         <p className="text-[11px] text-muted-foreground/60 leading-tight mt-2">
-          Enter the absolute or relative path to your Fitbit export folder: the
-          one that contains the <code>Global Export Data</code> folder (not the
-          folder with the <code>heart_rate-*.json</code> files itself).
+          {isTauri()
+            ? "Choose with Browse, or enter the absolute path to your Fitbit export folder: the one that contains"
+            : "Enter the absolute or relative path to your Fitbit export folder: the one that contains"}{" "}
+          the <code>Global Export Data</code> folder (not the folder with the{" "}
+          <code>heart_rate-*.json</code> files itself).
         </p>
       </div>
 
