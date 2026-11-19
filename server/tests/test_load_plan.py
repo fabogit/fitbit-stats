@@ -8,7 +8,7 @@ import pytest
 
 from conftest import S, parser
 from modules import etl, load_plan, parsers
-from modules.sources import Agg, FromSessions, Ratio, Special
+from modules.sources import Agg, CsvDaily, FromSessions, JsonDaily, Ratio, Special
 
 SERVER = Path(__file__).resolve().parent.parent
 
@@ -34,6 +34,8 @@ def test_plan_entries_are_unique_and_well_formed():
     for s in plan:
         names = {c.name for c in s.columns}
         assert len(names) == len(s.columns), s.key
+        if isinstance(s.reader, (JsonDaily, CsvDaily)):
+            assert s.reader.per_day in (None, Agg.SUM, Agg.MEAN, Agg.MAX, Agg.FIRST), s.key
         for c in s.columns:
             if isinstance(c.combine, FromSessions):
                 assert "_sessions" in names, s.key
@@ -51,8 +53,8 @@ def test_parsers_give_the_declared_columns_on_the_fixture_export(export_dir):
             df = parsers.parser_for(s)(str(f))
             if df is None:
                 continue
-            declared = [c.name for c in s.columns if not c.name.startswith("zone_")]
-            assert set(declared) <= set(df.columns), (s.key, f.name)
+            required = [c.name for c in s.columns if c.required and not c.name.startswith("zone_")]
+            assert set(required) <= set(df.columns), (s.key, f.name)
 
 
 def test_combine_rejects_an_unknown_rule():
@@ -85,7 +87,19 @@ def test_weight_and_bmi_written_as_text_are_read_as_numbers(tmp_path):
     assert df.loc["2024-03-01"].tolist() == [80.0, 24.5]
 
 
-@pytest.mark.parametrize("key", ["steps", "calories", "weight", "sedentary_minutes"])
+def test_stress_rows_without_data_are_dropped(tmp_path):
+    f = tmp_path / "Stress Score.csv"
+    f.write_text("DATE,STRESS_SCORE,STATUS\n2024-03-01T00:00:00,50,NO_DATA\n2024-03-02T00:00:00,60,READY\n")
+    assert parsers.parse(S["stress"], str(f))["stress_score"].tolist() == [60]
+
+
+def test_csv_headers_with_spaces_are_cleaned_for_every_csv_source(tmp_path):
+    f = tmp_path / "daily_readiness.csv"
+    f.write_text("timestamp, score \n2024-03-01T00:00:00,70\n")
+    assert parsers.parse(S["readiness"], str(f))["readiness_score"].tolist() == [70]
+
+
+@pytest.mark.parametrize("key", ["steps", "calories", "weight", "sedentary_minutes", "spo2", "hrv"])
 def test_a_simple_source_needs_no_function_of_its_own(key):
     assert not isinstance(S[key].reader, Special)
     assert callable(parser(key))

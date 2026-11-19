@@ -8,6 +8,13 @@ from enum import Enum
 from typing import Callable
 
 
+class Day(Enum):
+    """How a timestamp becomes a day. Each source keeps the conversion it had
+    before the load plan; aligning them is issue #91, not this module's job."""
+    AS_WRITTEN = "as_written"   # pd.to_datetime as is; a "Z" stays UTC (the ETL drops the zone later)
+    UTC = "utc"                 # pd.to_datetime(utc=True), then made naive
+
+
 class Agg(Enum):
     """A reduction of several values of the same day.
 
@@ -15,6 +22,7 @@ class Agg(Enum):
     must be rejected, not silently accepted.
     """
     SUM = "sum"
+    MEAN = "mean"
     MIN = "min"
     MAX = "max"
     FIRST = "first"     # first value in file order
@@ -43,22 +51,36 @@ Combine = Agg | FromSessions | Ratio
 
 
 @dataclass(frozen=True)
+class Difference:
+    """A value computed as minuend - subtrahend (two columns of the file)."""
+    minuend: str
+    subtrahend: str
+
+
+@dataclass(frozen=True)
 class Column:
     """One output column of a source.
 
     name      output name (a leading "_" marks a helper the ETL drops after combining)
-    field     where the value is read: a field name of the file, or None for the
-              same name as `name` (or for the output of a special parser)
-    required  a file without it gives no data (see parsers.read_json_daily)
+    field     where the value is read: a field name of the file, a Difference, or
+              None for the same name as `name` (or for the output of a special parser)
+    required  a file without it gives no data (see parsers.read_json_daily, read_csv_daily)
     combine   how a day found in several files is combined
     scale, decimals  value * scale, then rounded (unit conversions)
     """
     name: str
-    field: str | None = None
+    field: str | Difference | None = None
     required: bool = True
     combine: Combine = Agg.LAST
     scale: float | None = None
     decimals: int | None = None
+
+    @property
+    def inputs(self) -> tuple[str, ...]:
+        """The fields of the file this column is computed from."""
+        if isinstance(self.field, Difference):
+            return (self.field.minuend, self.field.subtrahend)
+        return (self.field or self.name,)
 
 
 @dataclass(frozen=True)
@@ -70,12 +92,22 @@ class JsonDaily:
 
 
 @dataclass(frozen=True)
+class CsvDaily:
+    """A CSV file with a date column. Header names are stripped of spaces."""
+    date_field: str = "timestamp"
+    day: Day = Day.AS_WRITTEN
+    date_format: str | None = None
+    per_day: Agg | None = None
+    keep_rows: Callable | None = None   # DataFrame -> boolean Series, applied before dates
+
+
+@dataclass(frozen=True)
 class Special:
     """A source too irregular for the generic readers: a function path -> DataFrame | None."""
     parse: Callable
 
 
-Reader = JsonDaily | Special
+Reader = JsonDaily | CsvDaily | Special
 
 
 @dataclass(frozen=True)

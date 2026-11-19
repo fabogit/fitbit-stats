@@ -1,7 +1,7 @@
 # backend/modules/parsers.py
 """Parsers: one per source, driven by its declaration in load_plan.py.
 
-Generic sources are read by read_json_daily from their declaration; the
+Generic sources are read by read_json_daily / read_csv_daily from their declaration; the
 irregular ones have a function of their own (Special). Every parser returns a
 DataFrame indexed by 'date', or None when the file has no data. Columns whose
 name starts with "_" are helpers for the ETL, which drops them after
@@ -13,7 +13,7 @@ from typing import NamedTuple
 
 import pandas as pd
 
-from modules.sources import Agg, Column, JsonDaily, Source, Special
+from modules.sources import Agg, Column, CsvDaily, Day, Difference, JsonDaily, Source, Special
 
 
 def _read_csv(file_path):
@@ -40,20 +40,37 @@ def _present(df, columns: tuple[Column, ...], date_field: str):
         return None
     present = []
     for c in columns:
-        if (c.field or c.name) in df.columns:
+        if all(i in df.columns for i in c.inputs):
             present.append(c)
         elif c.required:
             return None
     return present or None
 
 
-def _values(df, c: Column):
-    v = pd.to_numeric(df[c.field or c.name], errors='coerce')
+def _values(df, c: Column, numeric: bool):
+    if isinstance(c.field, Difference):
+        v = df[c.field.minuend] - df[c.field.subtrahend]
+    else:
+        v = df[c.field or c.name]
+    if numeric:
+        v = pd.to_numeric(v, errors='coerce')
     if c.scale is not None:
         v = v * c.scale
     if c.decimals is not None:
         v = v.round(c.decimals)
     return v
+
+
+def _frame(df, present, dates, numeric, agg: Agg | None):
+    """The declared columns of df, indexed by day and reduced to one row per day with `agg`."""
+    out = pd.DataFrame({c.name: _values(df, c, numeric) for c in present})
+    out.index = pd.DatetimeIndex(dates, name='date')
+    if agg is None:
+        return out
+    if agg is Agg.FIRST:
+        # not groupby.first(): that would skip a NaN column by column
+        return out[~out.index.duplicated(keep='first')]
+    return out.groupby(level=0).agg(agg.value)
 
 
 def read_json_daily(reader: JsonDaily, columns, file_path):
@@ -70,16 +87,29 @@ def read_json_daily(reader: JsonDaily, columns, file_path):
     present = _present(df, columns, reader.date_field)
     if present is None:
         return None
-    out = pd.DataFrame({c.name: _values(df, c) for c in present})
-    out.index = pd.DatetimeIndex(
-        pd.to_datetime(df[reader.date_field], format=reader.date_format).dt.normalize(),
-        name='date')
-    if reader.per_day is None:
-        return out
-    if reader.per_day is Agg.FIRST:
-        # not groupby.first(): that would skip a NaN column by column
-        return out[~out.index.duplicated(keep='first')]
-    return out.groupby(level=0).agg(reader.per_day.value)
+    dates = pd.to_datetime(df[reader.date_field], format=reader.date_format).dt.normalize()
+    return _frame(df, present, dates, True, reader.per_day)
+
+
+def read_csv_daily(reader: CsvDaily, columns, file_path):
+    """Read one file of a CsvDaily source: a CSV with a date column.
+
+    Same rules as read_json_daily, except that values are kept as they are
+    read (no number conversion) and rows can be filtered first (`keep_rows`).
+    """
+    df = _read_csv(file_path)
+    df.columns = df.columns.str.strip()
+    present = _present(df, columns, reader.date_field)
+    if present is None:
+        return None
+    if reader.keep_rows is not None:
+        df = df[reader.keep_rows(df)]
+    raw = df[reader.date_field]
+    if reader.day is Day.UTC:
+        dates = pd.to_datetime(raw, format=reader.date_format, utc=True).dt.tz_convert(None)
+    else:
+        dates = pd.to_datetime(raw, format=reader.date_format)
+    return _frame(df, present, dates.dt.normalize(), False, reader.per_day)
 
 
 # --- special sources ---
@@ -112,30 +142,6 @@ def parse_resting_heart_rate(file_path):
     df['date'] = pd.to_datetime(df['date'], format='%m/%d/%y')
     df = df.set_index('date')
     return df
-
-
-def parse_sleep_score_csv(file_path):
-    """
-    Parses 'sleep_score.csv'.
-
-    This file contains the overall sleep quality score calculated by Fitbit.
-
-    Args:
-        file_path (str): Path to the CSV file.
-
-    Returns:
-        pd.DataFrame: Indexed by 'date', containing 'overall_score',
-                      'deep_sleep_in_minutes', and 'restlessness'.
-                      Aggregates multiple entries per day using max().
-    """
-    df = _read_csv(file_path)
-    df = df.rename(columns={'timestamp': 'date'})
-    df['date'] = pd.to_datetime(
-        df['date'], format='ISO8601', utc=True).dt.tz_convert(None).dt.normalize()
-    cols = [c for c in ['overall_score', 'deep_sleep_in_minutes',
-                        'restlessness'] if c in df.columns]
-    df = df[cols + ['date']]
-    return df.groupby('date').max()  # Simplified aggregation
 
 
 def parse_heart_rate_intraday(file_path):
@@ -207,7 +213,7 @@ ZONE_NAMES = {
 
 def parse_active_zones_csv(file_path):
     """
-    Parses 'time_in_heart_rate_zone-YYYY-MM-DD.csv' (minute-by-minute logs).
+    Parses 'time_in_heart_rate_zone_YYYY-MM-DD.csv' (minute-by-minute logs).
     """
     df = _read_csv(file_path)
     if 'heart rate zone type' not in df.columns:
@@ -226,25 +232,6 @@ def parse_active_zones_csv(file_path):
     pivot = pivot.rename(columns=rename_cols)
 
     return pivot
-
-
-def parse_spo2_csv(file_path):
-    """
-    Parses 'Daily SpO2 - ... .csv'.
-
-    Args:
-        file_path (str): Path to the CSV file.
-
-    Returns:
-        pd.DataFrame: Indexed by 'date' with 'spo2_avg', 'spo2_min', 'spo2_max'.
-                      Handles duplicates by averaging values.
-    """
-    df = _read_csv(file_path)
-    df['date'] = pd.to_datetime(
-        df['timestamp'], utc=True).dt.tz_convert(None).dt.normalize()
-    df = df.rename(columns={'average_value': 'spo2_avg',
-                            'lower_bound': 'spo2_min', 'upper_bound': 'spo2_max'})
-    return df[['spo2_avg', 'spo2_min', 'spo2_max', 'date']].groupby('date').mean()
 
 
 class SleepSession(NamedTuple):
@@ -298,114 +285,6 @@ def parse_sleep_stages(file_path):
     out['_sessions'] = pd.Series(
         [sessions[d.strftime('%Y-%m-%d')] for d in out.index], index=out.index, dtype=object)
     return out
-
-
-def parse_hrv_csv(file_path):
-    """
-    Parses 'Daily Heart Rate Variability Summary - ... .csv'.
-
-    Args:
-        file_path (str): Path to the CSV file.
-
-    Returns:
-        pd.DataFrame: Indexed by 'date' with 'rmssd' (Root Mean Square of Successive Differences).
-                      Higher rMSSD generally indicates better recovery.
-    """
-    df = _read_csv(file_path)
-    if 'rmssd' not in df.columns:
-        return None
-    df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df = df.set_index('date')
-    return df[['rmssd']]
-
-
-def parse_stress_csv(file_path):
-    """
-    Parses 'Stress Score.csv'.
-
-    Filters out entries with 'NO_DATA' status or 0 score.
-
-    Args:
-        file_path (str): Path to the CSV file.
-
-    Returns:
-        pd.DataFrame: Indexed by 'date' with 'stress_score'.
-    """
-    df = _read_csv(file_path)
-    df.columns = df.columns.str.strip()
-    if 'DATE' not in df.columns or 'STRESS_SCORE' not in df.columns:
-        return None
-    df = df[df['STRESS_SCORE'] > 0]
-    df['date'] = pd.to_datetime(df['DATE']).dt.normalize()
-    df = df.set_index('date')
-    df = df.rename(columns={'STRESS_SCORE': 'stress_score'})
-    return df[['stress_score']]
-
-
-def parse_acwr_csv(file_path):
-    """
-    Parses 'cardio_acute_chronic_workload_ratio.csv'.
-    """
-    df = _read_csv(file_path)
-    if 'ratio' not in df.columns:
-        return None
-    df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df = df.rename(columns={'ratio': 'acwr_ratio'})
-    df = df.set_index('date')
-    return df[['acwr_ratio']]
-
-
-def parse_vo2max_csv(file_path):
-    """
-    Parses 'demographic_vo2max.csv'.
-    """
-    df = _read_csv(file_path)
-    if 'demographic vo2max' not in df.columns:
-        return None
-    df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df = df.rename(columns={'demographic vo2max': 'vo2max'})
-    df = df.set_index('date')
-    return df[['vo2max']]
-
-
-def parse_readiness_csv(file_path):
-    """
-    Parses 'daily_readiness.csv' to extract the true Fitbit Readiness Score.
-    """
-    df = _read_csv(file_path)
-    if 'score' not in df.columns:
-        return None
-    df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df = df.rename(columns={'score': 'readiness_score'})
-    df = df.set_index('date')
-    return df[['readiness_score']]
-
-
-def parse_respiratory_rate_csv(file_path):
-    """
-    Parses 'daily_respiratory_rate.csv' for breath tracking.
-    """
-    df = _read_csv(file_path)
-    if 'breaths per minute' not in df.columns:
-        return None
-    df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df = df.rename(columns={'breaths per minute': 'respiratory_rate'})
-    df = df.set_index('date')
-    return df[['respiratory_rate']]
-
-
-def parse_skin_temperature_csv(file_path):
-    """
-    Parses 'daily_sleep_temperature_derivations.csv' and calculates the variation.
-    """
-    df = _read_csv(file_path)
-    if 'nightly temperature celsius' not in df.columns or 'baseline temperature celsius' not in df.columns:
-        return None
-    df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-    df['temperature_variation'] = df['nightly temperature celsius'] - \
-        df['baseline temperature celsius']
-    df = df.set_index('date')
-    return df[['temperature_variation']]
 
 
 class ExerciseSession(NamedTuple):
@@ -494,7 +373,8 @@ def parser_for(source: Source):
     reader = source.reader
     if isinstance(reader, Special):
         return reader.parse
-    return partial(read_json_daily, reader, source.columns)
+    read = read_json_daily if isinstance(reader, JsonDaily) else read_csv_daily
+    return partial(read, reader, source.columns)
 
 
 def parse(source: Source, file_path):
