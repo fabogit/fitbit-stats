@@ -1,17 +1,20 @@
 """Shared helpers for the parser, metric and ETL tests.
 
-Everything that touches the global ``config`` module or lists the parsers is
-kept here, so a later refactor of the configuration or of the parsers has a
-single place to adapt.
+Everything that lists the parsers or builds the default profile is kept
+here, so a later refactor of the parsers has a single place to adapt.
 """
+from datetime import date
 from pathlib import Path
 
 import pytest
 
-import config
 from modules import etl, metrics, parsers
+from modules.run_config import Profile
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+# The profile the golden values of the tests are worked out with.
+DEFAULT_PROFILE = Profile(dob=date(1984, 3, 28), gender="male", height_cm=180, weight_kg=75.0)
 
 # One entry per source: key -> parser function. Adapt this table, not the
 # individual tests, if the parsers are ever reorganised.
@@ -58,18 +61,16 @@ def export_dir():
 
 
 @pytest.fixture
-def set_profile(monkeypatch):
-    """Set the user profile the metabolic metrics read (empty value = not set)."""
-    def _set(gender="male", dob="1984-03-28", height=180, weight=75.0):
-        monkeypatch.setattr(config, "USER_GENDER", gender)
-        monkeypatch.setattr(config, "USER_DOB", dob)
-        monkeypatch.setattr(config, "USER_HEIGHT_CM", height)
-        monkeypatch.setattr(config, "USER_WEIGHT_KG", weight)
-    return _set
+def make_profile():
+    """make_profile(gender=..., height=...) -> a Profile, DEFAULT_PROFILE with overrides."""
+    def _make(gender=DEFAULT_PROFILE.gender, dob=DEFAULT_PROFILE.dob,
+              height=DEFAULT_PROFILE.height_cm, weight=DEFAULT_PROFILE.weight_kg):
+        return Profile(dob=dob, gender=gender, height_cm=height, weight_kg=weight)
+    return _make
 
 
 @pytest.fixture
-def run_pipeline(set_profile):
+def run_pipeline():
     """Merge the export and apply the three metric steps, like main.py and api.py.
 
     NOTE: this repeats the call order used by main.py and api.py. Once the
@@ -77,9 +78,8 @@ def run_pipeline(set_profile):
     of this fixture with a call to it.
     """
     def _run(data_dir, start=None, end=None):
-        set_profile()
         df = etl.merge_all_data(data_dir, start, end)
         df = metrics.calculate_readiness(df)
-        df = metrics.calculate_metabolic_metrics(df)
+        df = metrics.calculate_metabolic_metrics(df, DEFAULT_PROFILE)
         return metrics.calculate_advanced_metrics(df)
     return _run

@@ -1,7 +1,8 @@
-import config
 import pandas as pd
 import numpy as np
 from typing import Literal
+
+from modules.run_config import Profile
 
 
 def calculate_readiness(df):
@@ -19,32 +20,37 @@ def calculate_readiness(df):
     return df
 
 
-def calculate_metabolic_metrics(df):
-    """ Calculates BMR (Mifflin-St Jeor), Active Calories, and Intensity. """
+def calculate_metabolic_metrics(df, profile: Profile | None):
+    """ Calculates BMR (Mifflin-St Jeor), Active Calories, and Intensity.
+
+    `profile` holds the user's biometrics; None (an incomplete profile) leaves
+    the BMR and the active calories at 0.
+    """
+    weight_fallback = profile.weight_kg if profile else 0.0
 
     # 1. Fill Weight
     if 'weight' in df.columns:
         # Interpolate missing values linearly to represent gradual changes
         df['weight_filled'] = df['weight'].interpolate(method='linear')
         # Fill remaining NaNs (edges or if no data points) with user configured fallback
-        df['weight_filled'] = df['weight_filled'].fillna(config.USER_WEIGHT_KG)
+        df['weight_filled'] = df['weight_filled'].fillna(weight_fallback)
     else:
-        df['weight_filled'] = config.USER_WEIGHT_KG
+        df['weight_filled'] = weight_fallback
 
     # 2. BMR
-    if not config.USER_GENDER or not config.USER_DOB or not config.USER_HEIGHT_CM:
+    if profile is None:
         df['bmr'] = 0.0
         df['active_calories'] = 0.0
     else:
-        s: Literal[-161, 5] = 5 if config.USER_GENDER == 'male' else -161
+        s: Literal[-161, 5] = 5 if profile.gender == 'male' else -161
 
         # Calculate age dynamically based on DOB and the record's date (index)
         try:
-            dob = pd.to_datetime(config.USER_DOB)
+            dob = pd.Timestamp(profile.dob)
             # df.index is expected to be a DatetimeIndex
             age_series = (df.index - dob).days / 365.25
             df['bmr'] = (10 * df['weight_filled']) + \
-                (6.25 * config.USER_HEIGHT_CM) - (5 * age_series) + s
+                (6.25 * profile.height_cm) - (5 * age_series) + s
         except Exception as e:
             print(f"BMR Error: {e}")
             df['bmr'] = 0.0

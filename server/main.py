@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 from modules import etl, metrics
+from modules.run_config import Profile
 import config
 
 import json
@@ -81,6 +82,9 @@ def main():
         print("Please provide them via CLI or ensure session_config.json contains them.\n")
         return
 
+    profile = Profile(dob=date.fromisoformat(config.USER_DOB), gender=config.USER_GENDER,
+                      height_cm=config.USER_HEIGHT_CM, weight_kg=config.USER_WEIGHT_KG)
+
     # 1. Load & Merge
     progress(10, "Loading and merging data files")
     warnings = []
@@ -97,7 +101,7 @@ def main():
         df = metrics.calculate_readiness(df)
 
         progress(75, "Calculating metabolic metrics")
-        df = metrics.calculate_metabolic_metrics(df)
+        df = metrics.calculate_metabolic_metrics(df, profile)
 
         progress(80, "Calculating advanced metrics")
         df = metrics.calculate_advanced_metrics(df)

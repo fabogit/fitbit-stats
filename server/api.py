@@ -16,7 +16,8 @@ from fastapi.responses import JSONResponse
 
 from modules.briefing import get_daily_brief
 from modules.run_config import (
-    AGE_YEARS_MAX, AGE_YEARS_MIN, HEIGHT_CM_MAX, HEIGHT_CM_MIN, WEIGHT_KG_MAX, WEIGHT_KG_MIN, age_on)
+    AGE_YEARS_MAX, AGE_YEARS_MIN, HEIGHT_CM_MAX, HEIGHT_CM_MIN, WEIGHT_KG_MAX, WEIGHT_KG_MIN,
+    Profile, age_on)
 
 # Change working directory so relative paths in config.py work correctly
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -239,6 +240,8 @@ def run_etl_sync(payload, loop):
             loop
         )
 
+    profile = Profile(dob=payload.dob, gender=payload.gender,
+                      height_cm=payload.height, weight_kg=payload.weight)
     warnings = []
     try:
         progress(10, "Loading and merging data files")
@@ -253,7 +256,7 @@ def run_etl_sync(payload, loop):
             df = metrics.calculate_readiness(df)
 
             progress(75, "Calculating metabolic metrics")
-            df = metrics.calculate_metabolic_metrics(df)
+            df = metrics.calculate_metabolic_metrics(df, profile)
 
             progress(80, "Calculating advanced metrics")
             df = metrics.calculate_advanced_metrics(df)
