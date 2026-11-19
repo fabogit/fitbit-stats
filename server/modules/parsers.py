@@ -1,11 +1,19 @@
 # backend/modules/parsers.py
+"""Parsers: one per source, driven by its declaration in load_plan.py.
+
+Generic sources are read by read_json_daily from their declaration; the
+irregular ones have a function of their own (Special). Every parser returns a
+DataFrame indexed by 'date', or None when the file has no data. Columns whose
+name starts with "_" are helpers for the ETL, which drops them after
+combining the files of a source.
+"""
 import json
+from functools import partial
 from typing import NamedTuple
 
 import pandas as pd
-import os
 
-from modules.sources import Source
+from modules.sources import Agg, Column, JsonDaily, Source, Special
 
 
 def _read_csv(file_path):
@@ -18,6 +26,63 @@ def _read_csv(file_path):
     except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as e:
         raise ValueError(f"not a readable CSV file ({type(e).__name__})") from e
 
+
+def _read_json(file_path):
+    with open(file_path, 'r') as f:
+        return json.load(f)
+
+
+# --- generic readers ---
+
+def _present(df, columns: tuple[Column, ...], date_field: str):
+    """The declared columns found in df, or None when the date or a required one is missing."""
+    if date_field not in df.columns:
+        return None
+    present = []
+    for c in columns:
+        if (c.field or c.name) in df.columns:
+            present.append(c)
+        elif c.required:
+            return None
+    return present or None
+
+
+def _values(df, c: Column):
+    v = pd.to_numeric(df[c.field or c.name], errors='coerce')
+    if c.scale is not None:
+        v = v * c.scale
+    if c.decimals is not None:
+        v = v.round(c.decimals)
+    return v
+
+
+def read_json_daily(reader: JsonDaily, columns, file_path):
+    """Read one file of a JsonDaily source: a list of records with a date field.
+
+    Values are converted to numbers (what cannot be converted becomes NaN),
+    scaled and rounded as declared, then reduced to one row per day with
+    `reader.per_day`. A declared column that is not required may be missing
+    from the file; a missing required column or date gives no data (None).
+    """
+    df = pd.DataFrame(_read_json(file_path))
+    if df.empty:
+        return None
+    present = _present(df, columns, reader.date_field)
+    if present is None:
+        return None
+    out = pd.DataFrame({c.name: _values(df, c) for c in present})
+    out.index = pd.DatetimeIndex(
+        pd.to_datetime(df[reader.date_field], format=reader.date_format).dt.normalize(),
+        name='date')
+    if reader.per_day is None:
+        return out
+    if reader.per_day is Agg.FIRST:
+        # not groupby.first(): that would skip a NaN column by column
+        return out[~out.index.duplicated(keep='first')]
+    return out.groupby(level=0).agg(reader.per_day.value)
+
+
+# --- special sources ---
 
 def parse_resting_heart_rate(file_path):
     """
@@ -49,32 +114,6 @@ def parse_resting_heart_rate(file_path):
     return df
 
 
-def parse_weight(file_path):
-    """
-    Parses 'weight-YYYY-MM-DD.json'.
-
-    IMPORTANT: Automatically converts weight from Pounds (Lbs) to Kilograms (Kg).
-
-    Args:
-        file_path (str): Path to the JSON file.
-
-    Returns:
-        pd.DataFrame: Indexed by 'date' with 'weight' (in Kg) and 'bmi'.
-                      Duplicates (multiple weigh-ins per day) are removed, keeping the first.
-    """
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-    df = pd.DataFrame(data)
-    if df.empty:
-        return None
-    df = df[['date', 'weight', 'bmi']]
-    # Conversion LBS -> KG
-    df['weight'] = (df['weight'] * 0.453592).round(1)
-    df['date'] = pd.to_datetime(df['date'], format='%m/%d/%y')
-    df = df.set_index('date')
-    return df[~df.index.duplicated(keep='first')]
-
-
 def parse_sleep_score_csv(file_path):
     """
     Parses 'sleep_score.csv'.
@@ -97,31 +136,6 @@ def parse_sleep_score_csv(file_path):
                         'restlessness'] if c in df.columns]
     df = df[cols + ['date']]
     return df.groupby('date').max()  # Simplified aggregation
-
-
-def parse_simple_activity_json(file_path):
-    """
-    Parses simple daily activity files (e.g., 'very_active_minutes.json', 'sedentary_minutes.json').
-
-    Args:
-        file_path (str): Path to the JSON file.
-
-    Returns:
-        pd.DataFrame: Indexed by 'date' with a single column named after the
-                      activity type (derived from filename).
-    """
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-    df = pd.DataFrame(data)
-    if df.empty:
-        return None
-    base_name = os.path.basename(file_path).split('-')[0]
-    df['value'] = pd.to_numeric(df['value'], errors='coerce')
-    df['date'] = pd.to_datetime(
-        df['dateTime'], format='%m/%d/%y %H:%M:%S').dt.normalize()
-    df = df.set_index('date')
-    df = df.rename(columns={'value': base_name})
-    return df[[base_name]]
 
 
 def parse_heart_rate_intraday(file_path):
@@ -231,29 +245,6 @@ def parse_spo2_csv(file_path):
     df = df.rename(columns={'average_value': 'spo2_avg',
                             'lower_bound': 'spo2_min', 'upper_bound': 'spo2_max'})
     return df[['spo2_avg', 'spo2_min', 'spo2_max', 'date']].groupby('date').mean()
-
-
-def parse_calories_intraday(file_path):
-    """
-    Parses 'calories-YYYY-MM-DD.json'.
-
-    Input data is minute-by-minute. This function aggregates it to daily totals.
-
-    Args:
-        file_path (str): Path to the JSON file.
-
-    Returns:
-        pd.DataFrame: Indexed by 'date' with 'calories_total' (sum of the day).
-    """
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-    df = pd.DataFrame(data)
-    if df.empty:
-        return None
-    df['value'] = pd.to_numeric(df['value'], errors='coerce')
-    df['date'] = pd.to_datetime(
-        df['dateTime'], format='%m/%d/%y %H:%M:%S').dt.normalize()
-    return df.groupby('date')['value'].sum().reset_index().rename(columns={'value': 'calories_total'}).set_index('date')
 
 
 class SleepSession(NamedTuple):
@@ -417,30 +408,6 @@ def parse_skin_temperature_csv(file_path):
     return df[['temperature_variation']]
 
 
-def parse_steps_json(file_path):
-    """Parses 'steps-YYYY-MM-DD.json'."""
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-    df = pd.DataFrame(data)
-    if df.empty:
-        return None
-    df['value'] = pd.to_numeric(df['value'], errors='coerce')
-    df['date'] = pd.to_datetime(df['dateTime'], format='%m/%d/%y %H:%M:%S').dt.normalize()
-    return df.groupby('date')['value'].sum().reset_index().rename(columns={'value': 'steps'}).set_index('date')
-
-
-def parse_distance_json(file_path):
-    """Parses 'distance-YYYY-MM-DD.json'."""
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-    df = pd.DataFrame(data)
-    if df.empty:
-        return None
-    df['value'] = pd.to_numeric(df['value'], errors='coerce')
-    df['date'] = pd.to_datetime(df['dateTime'], format='%m/%d/%y %H:%M:%S').dt.normalize()
-    return df.groupby('date')['value'].sum().reset_index().rename(columns={'value': 'distance'}).set_index('date')
-
-
 class ExerciseSession(NamedTuple):
     log_id: object
     duration: float
@@ -519,8 +486,15 @@ def parse_exercise_json(file_path):
 
 
 def parser_for(source: Source):
-    """The function path -> DataFrame | None that reads one file of `source`."""
-    return source.reader.parse
+    """The function path -> DataFrame | None that reads one file of `source`.
+
+    For a Special source it is the function itself (a module-level function,
+    so a process pool can pickle it); for the others a partial of the reader.
+    """
+    reader = source.reader
+    if isinstance(reader, Special):
+        return reader.parse
+    return partial(read_json_daily, reader, source.columns)
 
 
 def parse(source: Source, file_path):

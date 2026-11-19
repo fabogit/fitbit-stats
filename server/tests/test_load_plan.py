@@ -1,10 +1,12 @@
 """Structural checks on the server modules and on the ETL load plan."""
 import ast
+import json
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from conftest import S, parser
 from modules import etl, load_plan, parsers
 from modules.sources import Agg, FromSessions, Ratio, Special
 
@@ -64,3 +66,26 @@ def test_no_inplace_in_the_server_modules():
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.keyword):
                 assert node.arg != "inplace", f"{path.name}:{node.value.lineno}"
+
+
+# --- optional columns are optional ---
+
+def test_weight_without_bmi_keeps_the_weight(tmp_path):
+    f = tmp_path / "weight-2024-03-01.json"
+    f.write_text(json.dumps([{"date": "03/01/24", "weight": 176.4}]))
+    df = parsers.parse(S["weight"], str(f))
+    assert list(df.columns) == ["weight"]
+    assert df["weight"].tolist() == [80.0]
+
+
+def test_weight_and_bmi_written_as_text_are_read_as_numbers(tmp_path):
+    f = tmp_path / "weight-2024-03-01.json"
+    f.write_text(json.dumps([{"date": "03/01/24", "weight": "176.4", "bmi": "24.5"}]))
+    df = parsers.parse(S["weight"], str(f))
+    assert df.loc["2024-03-01"].tolist() == [80.0, 24.5]
+
+
+@pytest.mark.parametrize("key", ["steps", "calories", "weight", "sedentary_minutes"])
+def test_a_simple_source_needs_no_function_of_its_own(key):
+    assert not isinstance(S[key].reader, Special)
+    assert callable(parser(key))
