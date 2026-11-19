@@ -5,8 +5,7 @@ import {
 } from "@reduxjs/toolkit";
 import type { HealthRecord, DateRange } from "@/types/health";
 import { subMonths, parseISO, format } from "date-fns";
-import { isTauri } from "@tauri-apps/api/core";
-import { readTextFile, exists, BaseDirectory } from "@tauri-apps/plugin-fs";
+import { apiFetch } from "@/lib/api";
 
 interface DashboardState {
   data: HealthRecord[];
@@ -16,6 +15,8 @@ interface DashboardState {
   maxDataDate: string;
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
+  /** The load whose result counts: a slower, older load must not overwrite a newer one. */
+  requestId: string | null;
 }
 
 const initialState: DashboardState = {
@@ -26,6 +27,7 @@ const initialState: DashboardState = {
   maxDataDate: "",
   status: "idle",
   error: null,
+  requestId: null,
 };
 
 /** Parses the content of dashboard_data.json; anything but a JSON array is an error. */
@@ -42,59 +44,32 @@ function parseDashboardData(text: string): HealthRecord[] {
   return parsed as HealthRecord[];
 }
 
-/** Reads the dashboard data. A missing file is an empty result; any other failure throws. */
+/**
+ * Reads the dashboard data from the API, the same way on desktop and web.
+ * "No data yet" is an empty array from the server; every other failure throws.
+ */
 async function readDashboardData(): Promise<HealthRecord[]> {
-  if (isTauri()) {
-    if (!(await exists("dashboard_data.json", { baseDir: BaseDirectory.AppData }))) {
-      console.warn("dashboard_data.json not found locally (normal on first run)");
-      return [];
-    }
-    let content: string;
-    try {
-      content = await readTextFile("dashboard_data.json", { baseDir: BaseDirectory.AppData });
-    } catch (e) {
-      console.error("Error reading dashboard_data.json:", e);
-      throw new Error("Could not read dashboard_data.json from the app data folder.");
-    }
-    return parseDashboardData(content);
-  }
-
   let response: Response;
   try {
-    response = await fetch("/dashboard_data.json");
+    response = await apiFetch("/api/data");
   } catch (e) {
     console.error("Error fetching dashboard data:", e);
-    throw new Error("Could not load dashboard_data.json (network error).");
-  }
-  // A dev server answers a missing file with its HTML page instead of a 404.
-  const isHtml = (response.headers.get("content-type") ?? "").includes("text/html");
-  if (response.status === 404 || (response.ok && isHtml)) {
-    console.warn("dashboard_data.json not found (normal on first run)");
-    return [];
+    throw new Error("Could not load the dashboard data: the local server did not answer.");
   }
   if (!response.ok) {
-    throw new Error(`Could not load dashboard_data.json (HTTP ${response.status}).`);
+    throw new Error(`Could not load the dashboard data (HTTP ${response.status}).`);
+  }
+  // An answer that is not JSON (a proxy or a web server in the way) is not "no data".
+  if (!(response.headers.get("content-type") ?? "").includes("json")) {
+    throw new Error("Could not load the dashboard data: the server did not answer with JSON.");
   }
   return parseDashboardData(await response.text());
 }
 
-export const fetchHealthData = createAsyncThunk<HealthRecord[], { force?: boolean } | undefined>(
+/** Loads the dashboard data. Every dispatch reads it again; callers decide when. */
+export const fetchHealthData = createAsyncThunk<HealthRecord[]>(
   "dashboard/fetchHealthData",
-  async () => readDashboardData(),
-  {
-    // --- CACHING LOGIC ---
-    // Skip the call when data is already loaded or loading, unless the caller
-    // passes `force` (after a finished ETL run or a reset the file has changed).
-    condition: (arg, { getState }) => {
-      if (arg?.force) return true;
-      const { dashboard } = getState() as { dashboard: DashboardState };
-
-      if (dashboard.status === "succeeded" || dashboard.status === "loading") {
-        return false;
-      }
-      return true;
-    },
-  }
+  async () => readDashboardData()
 );
 
 const dashboardSlice = createSlice({
@@ -118,11 +93,13 @@ const dashboardSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchHealthData.pending, (state) => {
+      .addCase(fetchHealthData.pending, (state, action) => {
         state.status = "loading";
         state.error = null;
+        state.requestId = action.meta.requestId;
       })
       .addCase(fetchHealthData.fulfilled, (state, action) => {
+        if (action.meta.requestId !== state.requestId) return;
         const records = action.payload;
         state.status = "succeeded";
         state.error = null;
@@ -158,6 +135,7 @@ const dashboardSlice = createSlice({
         }
       })
       .addCase(fetchHealthData.rejected, (state, action) => {
+        if (action.meta.requestId !== state.requestId) return;
         // Never keep showing data that could not be refreshed.
         state.status = "failed";
         state.error = action.error.message || "Unknown error";

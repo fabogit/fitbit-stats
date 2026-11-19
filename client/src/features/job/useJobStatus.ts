@@ -35,8 +35,9 @@ export function useJobStatus() {
     let socket: WebSocket | null = null;
 
     const run = async () => {
-      // A cold desktop sidecar needs a few seconds before it answers.
-      if (isTauri() && !(await waitForServer(signal))) return;
+      // A cold desktop sidecar needs a few seconds before it answers. If it does
+      // not in time, the loop below keeps trying with a growing wait.
+      if (isTauri()) await waitForServer(signal);
       let delay = RECONNECT_MIN_MS;
       while (!signal.aborted) {
         try {

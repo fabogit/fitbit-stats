@@ -12,6 +12,6 @@ jobListener.startListening({
     const { loadedRunId } = (api.getState() as JobRootState).job;
     if (snapshot.state !== "finished" || !snapshot.id || snapshot.id === loadedRunId) return;
     api.dispatch(runDataRequested(snapshot.id));
-    void api.dispatch(fetchHealthData({ force: true }));
+    void api.dispatch(fetchHealthData());
   },
 });

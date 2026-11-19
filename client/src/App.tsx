@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAppDispatch, useAppSelector } from "./store/store";
 import { fetchHealthData } from "./features/dashboard/dashboardSlice";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, waitForServer } from "@/lib/api";
 import { loadJobStatus } from "./features/job/jobApi";
 import { useJobStatus } from "./features/job/useJobStatus";
 import { Sidebar } from "./components/dashboard/Sidebar";
@@ -17,15 +17,18 @@ import { EtlWarningsBanner } from "./components/dashboard/EtlWarningsBanner";
 import { DataErrorState } from "./components/dashboard/DataErrorState";
 import { Header } from "./components/dashboard/Header";
 import { LandingPage } from "./components/onboarding/LandingPage";
-import { isTauri } from "@tauri-apps/api/core";
-import { exists, BaseDirectory } from "@tauri-apps/plugin-fs";
+import { StartupScreen } from "./components/dashboard/StartupScreen";
+
+/** Where the start sequence is: waiting for the server, failed, first run, or the dashboard. */
+type Startup = "starting" | "unreachable" | "first-run" | "ready";
 
 function App() {
   const dispatch = useAppDispatch();
   const { status, filteredData } = useAppSelector((state) => state.dashboard);
   const [activeTab, setActiveTab] = useState("overview");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isFirstRun, setIsFirstRun] = useState<boolean | null>(null); // null = checking
+  const [startup, setStartup] = useState<Startup>("starting");
+  const [startAttempt, setStartAttempt] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== "undefined") {
       return window.innerWidth >= 768;
@@ -36,46 +39,45 @@ function App() {
   // Keeps state.job in step with the server for the whole life of the app.
   useJobStatus();
 
+  // Start sequence, the same on desktop and web: wait for the server, read the
+  // job status, read the configuration, then load the data. The first-run page
+  // is for a user with neither a saved configuration nor any data.
   useEffect(() => {
-    // Check if configuration exists
-    const checkConfig = async () => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const start = async () => {
+      setStartup("starting");
+      if (!(await waitForServer(signal))) {
+        if (!signal.aborted) setStartup("unreachable");
+        return;
+      }
       try {
-        if (isTauri()) {
-          const hasData = await exists("dashboard_data.json", { baseDir: BaseDirectory.AppData });
-          
-          if (hasData) {
-            setIsFirstRun(false);
-            dispatch(fetchHealthData());
-          } else {
-            setIsFirstRun(true);
-          }
-        } else {
-          // Read the job status first: the run that is current when the data is
-          // loaded is the baseline for reloading it later. Asked in parallel with
-          // the config; a server that does not answer must not block the data.
-          const statusRead = loadJobStatus(dispatch).catch(() => undefined);
-          const resp = await apiFetch("/api/config");
-          const configData = await resp.json();
-          
-          if (!configData || !configData.dob) {
-            setIsFirstRun(true);
-          } else {
-            setIsFirstRun(false);
-            await statusRead;
-            dispatch(fetchHealthData());
-          }
-        }
+        // The run that is current when the data is loaded is the baseline for
+        // reloading it later (see the job listener). A failed read is not fatal:
+        // the status connection keeps trying and the data read below reports
+        // a server that is really down.
+        await loadJobStatus(dispatch).catch((e) => console.warn("Job status unavailable:", e));
+        const resp = await apiFetch("/api/config");
+        if (!resp.ok) throw new Error(`Config request failed (HTTP ${resp.status})`);
+        const configData = await resp.json();
+        if (signal.aborted) return;
+        const result = await dispatch(fetchHealthData());
+        if (signal.aborted) return;
+        const noConfig = !configData || !configData.dob;
+        const noData = fetchHealthData.fulfilled.match(result) && result.payload.length === 0;
+        // A failed load is shown by the dashboard as an error, never as "no data".
+        setStartup(noConfig && noData ? "first-run" : "ready");
       } catch (e) {
-        console.error("Failed to fetch config or read fs", e);
-        // If we can't route or check, treat as first run
-        setIsFirstRun(true);
+        console.error("Start sequence failed:", e);
+        if (!signal.aborted) setStartup("unreachable");
       }
     };
-    checkConfig();
-  }, [dispatch]);
+    void start();
+    return () => controller.abort();
+  }, [dispatch, startAttempt]);
 
   const handleInitialConfigSuccess = () => {
-    setIsFirstRun(false);
+    setStartup("ready");
     // The data is loaded by the job listener when the run that was just started finishes.
   };
 
@@ -91,7 +93,11 @@ function App() {
   };
 
   const renderContent = () => {
-    if (isFirstRun === null || (status === "loading" && !isFirstRun && filteredData.length === 0)) {
+    if (startup === "starting" || startup === "unreachable") {
+      return <StartupScreen kind={startup} onRetry={() => setStartAttempt((n) => n + 1)} />;
+    }
+
+    if (startup === "ready" && status === "loading" && filteredData.length === 0) {
       return (
         <div className="min-h-screen bg-background flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
@@ -99,7 +105,7 @@ function App() {
       );
     }
 
-    if (isFirstRun) {
+    if (startup === "first-run") {
       return <LandingPage onSuccess={handleInitialConfigSuccess} />;
     }
 
