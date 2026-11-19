@@ -94,6 +94,9 @@ jobs:
         with:
           workspaces: client/src-tauri -> target
 
+      - name: Refresh apt lists
+        run: sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+
       - name: Install system dependencies
         # Cached: on a hit the packages are restored without contacting the
         # apt mirrors. build-essential, curl, wget and file are preinstalled
@@ -102,8 +105,7 @@ jobs:
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
           packages: libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-          version: 2
-          debug: true
+          version: 3
 
       - name: Verify libs
         run: |
