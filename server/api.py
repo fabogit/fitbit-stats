@@ -13,11 +13,12 @@ import uvicorn
 from pydantic import BaseModel, Field, field_validator
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import config
 from jobs import LAST_RUN_FILE, JobBusy, JobManager, JobSnapshot
 from modules.briefing import get_daily_brief
+from modules.etl import JSON_FILE
 from modules.pipeline import run_pipeline
 from modules.run_config import (
     AGE_YEARS_MAX, AGE_YEARS_MIN, HEIGHT_CM_MAX, HEIGHT_CM_MIN, WEIGHT_KG_MAX, WEIGHT_KG_MIN,
@@ -308,6 +309,21 @@ async def websocket_status(websocket: WebSocket):
         pass
     finally:
         manager.disconnect(websocket)
+
+
+@app.get("/api/data")
+async def get_data():
+    """The daily records of the last run, exactly as the pipeline wrote them.
+
+    Answers an empty list, not 404, while there is no data: a 404 from a
+    misrouted proxy then stays distinguishable from "nothing calculated yet".
+    The pipeline replaces the file atomically, so a reader always gets a whole file.
+    """
+    no_store = {"Cache-Control": "no-store"}
+    path = Path(config.CLIENT_PUBLIC_DIR) / JSON_FILE
+    if not path.is_file():
+        return JSONResponse([], headers=no_store)
+    return FileResponse(path, media_type="application/json", headers=no_store)
 
 
 @app.get("/api/config")
