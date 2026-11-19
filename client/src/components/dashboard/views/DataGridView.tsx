@@ -3,11 +3,16 @@ import { useAppSelector } from "@/store/store";
 import { DataTable } from "../datagrid/DataTable";
 import { columns } from "../datagrid/columns";
 import { calculateStats } from "@/lib/statistics";
+import { NoDataState } from "../NoDataState";
 
-export function DataGridView() {
+export function DataGridView({ onAction }: { onAction?: () => void }) {
   const { filteredData } = useAppSelector((state) => state.dashboard);
 
   const stats = useMemo(() => calculateStats(filteredData), [filteredData]);
+
+  if (filteredData.length === 0) {
+    return <NoDataState onAction={onAction} />;
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
