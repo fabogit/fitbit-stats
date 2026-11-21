@@ -161,8 +161,9 @@ def test_zones_unknown_zone_name_gets_a_generic_column(parse, tmp_path):
     assert parse("active_zones", f)["zone_some_new"].tolist() == [1]
 
 
-def test_zones_missing_column_returns_none(parse, tmp_path):
-    assert parse("active_zones", csv_file(tmp_path, "timestamp,other\n2024-03-01T10:00:00Z,1\n")) is None
+def test_zones_missing_column_is_reported(parse, tmp_path):
+    with pytest.raises(parsers.MissingColumns):
+        parse("active_zones", csv_file(tmp_path, "timestamp,other\n2024-03-01T10:00:00Z,1\n"))
 
 
 # --- SpO2 ---
@@ -283,9 +284,10 @@ def test_skin_temperature_is_nightly_minus_baseline(parse, export_dir):
 
 @pytest.mark.parametrize("key", ["hrv", "stress", "acwr", "vo2max", "readiness",
                                  "respiratory_rate", "skin_temperature"])
-def test_csv_without_the_key_column_returns_none(parse, tmp_path, key):
+def test_csv_without_the_key_column_is_reported(parse, tmp_path, key):
     f = csv_file(tmp_path, "timestamp,other\n2024-03-28T00:00:00Z,1\n")
-    assert parse(key, f) is None
+    with pytest.raises(parsers.MissingColumns):
+        parse(key, f)
 
 
 # --- exercise ---

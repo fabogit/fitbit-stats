@@ -114,6 +114,21 @@ def test_unknown_zone_split_across_files_is_summed(tmp_path):
     assert etl.load_source(tmp_path, S["active_zones"])["zone_new_zone"].tolist() == [2]
 
 
+@pytest.mark.parametrize("name, content, reason", [
+    ("Daily Heart Rate Variability Summary - 1.csv", "timestamp,other\n2024-03-01T00:00:00,1\n",
+     "MissingColumns: missing column(s): rmssd"),
+    ("Daily Heart Rate Variability Summary - 2.csv", "day,rmssd\n2024-03-01T00:00:00,1\n",
+     "MissingColumns: missing column(s): timestamp"),
+])
+def test_a_file_without_a_required_column_is_reported_as_a_warning(tmp_path, name, content, reason):
+    folder = tmp_path / "Heart Rate Variability"
+    folder.mkdir()
+    (folder / name).write_text(content)
+    warnings = []
+    etl.load_source(tmp_path, S["hrv"], warnings)
+    assert warnings == [{"file": name, "reason": reason}]
+
+
 def test_stress_rows_without_data_are_dropped(tmp_path):
     f = tmp_path / "Stress Score.csv"
     f.write_text("DATE,STRESS_SCORE,STATUS\n2024-03-01T00:00:00,50,NO_DATA\n2024-03-02T00:00:00,60,READY\n")

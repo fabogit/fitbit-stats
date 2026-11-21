@@ -16,6 +16,18 @@ import pandas as pd
 from modules.sources import Agg, Column, CsvDaily, Day, Difference, JsonDaily, Source, Special
 
 
+class MissingColumns(ValueError):
+    """A file lacks a column its source needs (or its date column).
+
+    The ETL reports the file as a warning with the names of the columns.
+    """
+
+
+def _require(missing):
+    if missing:
+        raise MissingColumns(f"missing column(s): {', '.join(missing)}")
+
+
 def _read_csv(file_path):
     """Read a CSV file; a file that cannot be read raises, it is never skipped silently.
 
@@ -35,15 +47,19 @@ def _read_json(file_path):
 # --- generic readers ---
 
 def _present(df, columns: tuple[Column, ...], date_field: str):
-    """The declared columns found in df, or None when the date or a required one is missing."""
-    if date_field not in df.columns:
-        return None
+    """The declared columns found in df, or None when none of them is.
+
+    Raises MissingColumns when the date field or a required column is missing.
+    """
+    missing = [date_field] if date_field not in df.columns else []
     present = []
     for c in columns:
-        if all(i in df.columns for i in c.inputs):
+        absent = [i for i in c.inputs if i not in df.columns]
+        if not absent:
             present.append(c)
         elif c.required:
-            return None
+            missing += absent
+    _require(missing)
     return present or None
 
 
@@ -79,7 +95,7 @@ def read_json_daily(reader: JsonDaily, columns, file_path):
     Values are converted to numbers (what cannot be converted becomes NaN),
     scaled and rounded as declared, then reduced to one row per day with
     `reader.per_day`. A declared column that is not required may be missing
-    from the file; a missing required column or date gives no data (None).
+    from the file; a missing required column or date raises MissingColumns.
     """
     df = pd.DataFrame(_read_json(file_path))
     if df.empty:
@@ -221,8 +237,7 @@ def parse_active_zones_csv(file_path):
     Parses 'time_in_heart_rate_zone_YYYY-MM-DD.csv' (minute-by-minute logs).
     """
     df = _read_csv(file_path)
-    if 'heart rate zone type' not in df.columns:
-        return None
+    _require([c for c in ('timestamp', 'heart rate zone type') if c not in df.columns])
 
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
 

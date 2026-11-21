@@ -64,7 +64,7 @@ class Column:
     name      output name (a leading "_" marks a helper the ETL drops after combining)
     field     where the value is read: a field name of the file, a Difference, or
               None for the same name as `name` (or for the output of a special parser)
-    required  a file without it gives no data (see parsers.read_json_daily, read_csv_daily)
+    required  a file without it is reported as a warning (see parsers.MissingColumns)
     combine   how a day found in several files is combined
     scale, decimals  value * scale, then rounded (unit conversions)
     """
