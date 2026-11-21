@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useRef } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Input } from "@/components/ui/input";
@@ -15,22 +15,11 @@ import { CheckCircle2, AlertCircle, Search, Loader2, Trash2 } from "lucide-react
 import { useAppDispatch } from "../../store/store";
 import { fetchHealthData } from "../../features/dashboard/dashboardSlice";
 import { BUSY_MESSAGE, startJob } from "../../features/job/startJob";
-import { apiFetch, waitForServer } from "@/lib/api";
-import {
-  HEIGHT_CM_MIN,
-  HEIGHT_CM_MAX,
-  WEIGHT_KG_MIN,
-  WEIGHT_KG_MAX,
-  dobBounds,
-} from "@/lib/biometrics";
-
-// The packaged desktop server resolves relative paths against its own
-// temporary extraction folder, so there the folder must be absolute.
-const RELATIVE_PATH_ERROR = "Use an absolute path or Browse.";
-const isAbsolutePath = (p: string) => /^([/\\]|[A-Za-z]:[/\\])/.test(p);
-const isDesktopRelativePath = (p: string) =>
-  isTauri() && p.trim() !== "" && !isAbsolutePath(p.trim());
-const defaultDataPath = () => (isTauri() ? "" : "./data");
+import { apiFetch } from "@/lib/api";
+import { HEIGHT_CM_MIN, HEIGHT_CM_MAX, WEIGHT_KG_MIN, WEIGHT_KG_MAX, dobBounds } from "@/lib/biometrics";
+import { usePathCheck } from "./usePathCheck";
+import { useProfileForm, type Gender } from "./useProfileForm";
+import { validateProfile } from "./validation";
 
 interface ConfigFormProps {
   onSuccess: () => void;
@@ -43,62 +32,15 @@ export function ConfigForm({
 }: ConfigFormProps) {
   const selectOnClick = useRef(false);
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    dob: "",
-    gender: "",
-    height: "",
-    weight: "",
-    data_path: defaultDataPath(),
-  });
+  const form = useProfileForm();
+  const formData = form.values;
+  const serverState = form.server;
+  const setFormData = (v: typeof formData) => form.set(v);
   const [touched, setTouched] = useState({ dob: false, height: false, weight: false });
-  const [pathStatus, setPathStatus] = useState<
-    "idle" | "checking" | "valid" | "invalid"
-  >("idle");
-  const [pathError, setPathError] = useState("");
-  const [serverState, setServerState] = useState<
-    "starting" | "ready" | "failed"
-  >("starting");
-  const [serverAttempt, setServerAttempt] = useState(0);
-
-  // Wait for the local server before talking to it: a cold start takes seconds.
-  useEffect(() => {
-    const controller = new AbortController();
-    setServerState("starting");
-    waitForServer(controller.signal).then((ok) => {
-      if (!controller.signal.aborted) setServerState(ok ? "ready" : "failed");
-    });
-    return () => controller.abort();
-  }, [serverAttempt]);
-
-  useEffect(() => {
-    if (serverState !== "ready") return;
-    const loadConfig = async () => {
-      apiFetch("/api/config")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data && Object.keys(data).length > 0) {
-            setFormData((prev) => ({
-              ...prev,
-              dob: data.dob || prev.dob,
-              gender: data.gender || prev.gender,
-              height: data.height ? String(data.height) : prev.height,
-              weight: data.weight ? String(data.weight) : prev.weight,
-              // A relative path saved by an older desktop version cannot be
-              // resolved there: leave the field empty instead.
-              data_path:
-                data.data_path && !isDesktopRelativePath(data.data_path)
-                  ? data.data_path
-                  : prev.data_path,
-            }));
-            if (data.data_path) {
-               setPathStatus("idle");
-            }
-          }
-        })
-        .catch((err) => console.error("Could not fetch config:", err));
-    };
-    loadConfig();
-  }, [serverState]);
+  const { status: pathStatus, error: pathError } = usePathCheck(
+    formData.data_path,
+    serverState === "ready",
+  );
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -110,7 +52,6 @@ export function ConfigForm({
       if (relativePath) {
         const folderName = relativePath.split("/")[0];
         setFormData({ ...formData, data_path: `./${folderName}` });
-        setPathStatus("idle");
       }
     }
   };
@@ -126,7 +67,6 @@ export function ConfigForm({
         });
         if (selectedPath && typeof selectedPath === "string") {
           setFormData({ ...formData, data_path: selectedPath });
-          setPathStatus("idle");
         }
       } catch (err) {
         console.error("Failed to open Tauri dialog:", err);
@@ -136,44 +76,6 @@ export function ConfigForm({
       document.getElementById("folder-picker")?.click();
     }
   };
-
-  const checkPath = useCallback(async (pathToCheck: string) => {
-    if (!pathToCheck.trim()) {
-      setPathStatus("idle");
-      return;
-    }
-    if (isDesktopRelativePath(pathToCheck)) {
-      setPathStatus("invalid");
-      setPathError(RELATIVE_PATH_ERROR);
-      return;
-    }
-    setPathStatus("checking");
-
-    try {
-      const resp = await apiFetch(
-        `/api/check-path?path=${encodeURIComponent(pathToCheck.trim())}`,
-      );
-      const data = await resp.json();
-      if (data.valid) {
-        setPathStatus("valid");
-        setPathError("");
-      } else {
-        setPathStatus("invalid");
-        setPathError(data.reason);
-      }
-    } catch {
-      setPathStatus("invalid");
-      setPathError("API server unreachable. Make sure the backend is running.");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (serverState !== "ready") return;
-    const timer = setTimeout(() => {
-      checkPath(formData.data_path);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [formData.data_path, checkPath, serverState]);
 
   const dispatch = useAppDispatch();
 
@@ -190,8 +92,7 @@ export function ConfigForm({
       }
       if (!resp.ok) throw new Error(`Clear request failed (HTTP ${resp.status})`);
 
-      setFormData({ dob: "", gender: "", height: "", weight: "", data_path: defaultDataPath() });
-      setPathStatus("idle");
+      form.clear();
       // Calling fetchHealthData will reload empty state causing NoDataState to re-render in Dashboard
       dispatch(fetchHealthData());
       alert("All application data has been successfully deleted.");
@@ -208,46 +109,17 @@ export function ConfigForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Basic Sanitization & Validation
-    const heightVal = parseInt(formData.height);
-    const weightVal = parseFloat(formData.weight);
-    const pathVal = formData.data_path.trim();
-
-    if (!formData.dob || formData.dob < dobMin || formData.dob > dobMax) {
-      alert("Please enter a valid Date of Birth");
-      return;
-    }
-    if (formData.gender !== "male" && formData.gender !== "female") {
-      alert("Please select a gender");
-      return;
-    }
-    if (isNaN(heightVal) || heightVal < HEIGHT_CM_MIN || heightVal > HEIGHT_CM_MAX) {
-      alert(`Please enter a valid height (${HEIGHT_CM_MIN}-${HEIGHT_CM_MAX} cm)`);
-      return;
-    }
-    if (isNaN(weightVal) || weightVal < WEIGHT_KG_MIN || weightVal > WEIGHT_KG_MAX) {
-      alert(`Please enter a valid weight (${WEIGHT_KG_MIN}-${WEIGHT_KG_MAX} kg)`);
-      return;
-    }
-    if (!pathVal) {
-      alert("Datastore path is required");
-      return;
-    }
-    if (isDesktopRelativePath(pathVal)) {
-      setPathStatus("invalid");
-      setPathError(RELATIVE_PATH_ERROR);
+    const validation = validateProfile(formData, dobBounds());
+    if (!validation.ok) {
+      // A path the desktop cannot resolve is shown under the field by the path check.
+      const [first, message] = Object.entries(validation.errors)[0];
+      if (first !== "data_path" || message === "Datastore path is required") alert(message);
       return;
     }
 
     setLoading(true);
     try {
-      const result = await startJob(dispatch, {
-        dob: formData.dob,
-        gender: formData.gender,
-        height: heightVal,
-        weight: weightVal,
-        data_path: pathVal,
-      });
+      const result = await startJob(dispatch, validation.body);
       if (result.kind === "failed") {
         alert("Error starting calculation on the server.");
         setLoading(false);
@@ -331,7 +203,7 @@ export function ConfigForm({
         <Select
           value={formData.gender}
           required
-          onValueChange={(value) => setFormData({ ...formData, gender: value })}
+          onValueChange={(value) => form.set({ gender: value as Gender })}
         >
           <SelectTrigger id="gender">
             <SelectValue placeholder="Select gender" />
@@ -390,7 +262,6 @@ export function ConfigForm({
             }}
             onChange={(e) => {
               setFormData({ ...formData, data_path: e.target.value });
-              setPathStatus("idle");
             }}
             className={`h-12 pr-24 transition-colors ${
               pathStatus === "valid"
@@ -424,7 +295,7 @@ export function ConfigForm({
             <button
               type="button"
               className="underline"
-              onClick={() => setServerAttempt((n) => n + 1)}
+              onClick={() => form.retryServer()}
             >
               Retry
             </button>
