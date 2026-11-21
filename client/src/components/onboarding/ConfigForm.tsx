@@ -35,8 +35,6 @@ export function ConfigForm({
   const form = useProfileForm();
   const formData = form.values;
   const serverState = form.server;
-  const setFormData = (v: typeof formData) => form.set(v);
-  const [touched, setTouched] = useState({ dob: false, height: false, weight: false });
   const { status: pathStatus, error: pathError } = usePathCheck(
     formData.data_path,
     serverState === "ready",
@@ -51,7 +49,7 @@ export function ConfigForm({
       ).webkitRelativePath;
       if (relativePath) {
         const folderName = relativePath.split("/")[0];
-        setFormData({ ...formData, data_path: `./${folderName}` });
+        form.set({ data_path: `./${folderName}` });
       }
     }
   };
@@ -66,7 +64,7 @@ export function ConfigForm({
           title: "Select Fitbit Export Folder",
         });
         if (selectedPath && typeof selectedPath === "string") {
-          setFormData({ ...formData, data_path: selectedPath });
+          form.set({ data_path: selectedPath });
         }
       } catch (err) {
         console.error("Failed to open Tauri dialog:", err);
@@ -151,8 +149,7 @@ export function ConfigForm({
             required
             value={formData.dob}
             onChange={(e) => {
-              setFormData({ ...formData, dob: e.target.value });
-              setTouched({ ...touched, dob: true });
+              form.set({ dob: e.target.value });
             }}
             className={`h-12 text-lg transition-all duration-300 ${!formData.dob ? "text-muted-foreground/40" : ""}`}
             placeholder="YYYY-MM-DD"
@@ -171,8 +168,7 @@ export function ConfigForm({
             value={formData.height}
             onFocus={(e) => e.target.select()}
             onChange={(e) => {
-              setFormData({ ...formData, height: e.target.value });
-              setTouched({ ...touched, height: true });
+              form.set({ height: e.target.value });
             }}
             className={`h-12 text-lg transition-all duration-300 ${!formData.height ? "text-muted-foreground/40" : ""}`}
           />
@@ -190,8 +186,7 @@ export function ConfigForm({
             value={formData.weight}
             onFocus={(e) => e.target.select()}
             onChange={(e) => {
-              setFormData({ ...formData, weight: e.target.value });
-              setTouched({ ...touched, weight: true });
+              form.set({ weight: e.target.value });
             }}
             className={`h-12 text-lg transition-all duration-300 ${!formData.weight ? "text-muted-foreground/40" : ""}`}
           />
@@ -261,7 +256,7 @@ export function ConfigForm({
               selectOnClick.current = false;
             }}
             onChange={(e) => {
-              setFormData({ ...formData, data_path: e.target.value });
+              form.set({ data_path: e.target.value });
             }}
             className={`h-12 pr-24 transition-colors ${
               pathStatus === "valid"
