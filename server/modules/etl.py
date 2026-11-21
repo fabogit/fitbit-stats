@@ -4,6 +4,8 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 import pandas as pd
 from modules import parsers
+from modules.load_plan import LOAD_PLAN
+from modules.sources import Agg, FromSessions, Ratio
 
 
 JSON_FILE = "dashboard_data.json"
@@ -47,11 +49,6 @@ def filter_by_date(df, start=None, end=None):
     return df
 
 
-# Parsers heavy enough (hundreds of large files) to be worth a process pool.
-# Decision (heart-rate speed-up): the min/max/avg BPM columns are kept, the
-# parser is rewritten without pandas and its files are parsed in parallel.
-# Skipping the source would drop these columns from dashboard_data.json.
-PARALLEL_PARSERS = (parsers.heart_rate_intraday_detail,)
 MAX_WORKERS = 8
 
 
@@ -63,11 +60,15 @@ def _safe_parse(parser_func, path):
         return None, e
 
 
-def _parse_files(files, parser_func):
-    """Parse files in order, in a process pool for heavy parsers when it is worthwhile."""
+def _parse_files(files, parser_func, parallel=False):
+    """Parse files in order, in a process pool for heavy sources when it is worthwhile.
+
+    Decision (heart-rate speed-up): the heart-rate source is declared `parallel`
+    in the load plan; its parser avoids pandas and its files go to a pool.
+    """
     work = partial(_safe_parse, parser_func)
     workers = min(MAX_WORKERS, os.cpu_count() or 1)
-    if parser_func in PARALLEL_PARSERS and workers > 1 and len(files) > workers:
+    if parallel and workers > 1 and len(files) > workers:
         try:
             with ProcessPoolExecutor(workers) as pool:
                 return list(pool.map(work, files, chunksize=4))
@@ -96,47 +97,6 @@ def _skip_reason(error, path):
     return describe_error(error, (path, os.path.dirname(path)))
 
 
-# How the rows of the same day coming from different files of one source are
-# combined (see _combine_duplicate_days). A rule is one of:
-#   "sum"                 additive values (the parts of a split day add up)
-#   "min" / "max"         daily minimum / maximum
-#   "last"                snapshot values: the row of the last file in name order
-#   ("session", i)        field i of the sessions listed in the "_sessions" helper
-#                         column, each session counted once by its id (the same
-#                         session can be in two overlapping files), then added up
-#   ("session_mean", i)   same sessions, mean of field i over those where it is
-#                         not None (the last row's value if there are none)
-#   ("ratio", num, den, decimals)
-#                         an average recomputed as sum(num) / sum(den) over the
-#                         helper columns the parser exposes (names start with an
-#                         underscore and are dropped from the result)
-# A column without a rule is a snapshot ("last").
-def _sum_of(*columns):
-    return {c: "sum" for c in columns}
-
-
-RULES_HEART_RATE = {
-    "min_bpm": "min", "max_bpm": "max",
-    "avg_bpm": ("ratio", "_bpm_sum", "_bpm_n", 1),
-    "_bpm_sum": "sum", "_bpm_n": "sum",
-}
-RULES_EXERCISE = {
-    "exercise_duration": ("session", 1), "exercise_calories": ("session", 2),
-    "exercise_count": ("session", 3), "exercise_aef": ("session_mean", 4),
-}
-RULES_STEPS = _sum_of("steps")
-RULES_DISTANCE = _sum_of("distance")
-RULES_CALORIES = _sum_of("calories_total")
-RULES_SLEEP_STAGES = {
-    "sleep_deep": ("session", 1), "sleep_light": ("session", 2),
-    "sleep_rem": ("session", 3), "sleep_awake": ("session", 4),
-}
-RULES_ZONES = _sum_of("zone_out_of_range", "zone_light", "zone_moderate", "zone_vigorous",
-                      "zone_fat_burn", "zone_cardio", "zone_peak")
-RULES_ACTIVITY_MINUTES = _sum_of("very_active_minutes", "moderately_active_minutes",
-                                 "lightly_active_minutes", "sedentary_minutes")
-
-
 SESSIONS_COLUMN = "_sessions"
 
 
@@ -156,13 +116,14 @@ def _unique_sessions(groups):
     return unique
 
 
-def _combine_duplicate_days(df, rules):
+def _combine_duplicate_days(df, rules, default=Agg.LAST):
     """
     Reduce a frame with several rows per day (one per file the day appears in)
-    to one row per day, with the rule of each column (see RULES_*).
+    to one row per day, with the rule of each column (Column.combine in the
+    load plan; `default` for columns without one).
 
     Days that appear once are returned untouched. Rows must be in file order
-    (files sorted by name), which is what the "last" rule relies on.
+    (files sorted by name), which is what the LAST rule relies on.
     """
     dup = df.index.duplicated(keep=False)
     if not dup.any():
@@ -173,40 +134,42 @@ def _combine_duplicate_days(df, rules):
     combined = {}
     sessions_by_day = None
     for col in multi.columns:
-        rule = rules.get(col, "last")
-        if rule == "sum":
-            combined[col] = grouped[col].sum(min_count=1)
-        elif rule == "min":
-            combined[col] = grouped[col].min()
-        elif rule == "max":
-            combined[col] = grouped[col].max()
-        elif rule == "last":
-            combined[col] = last[col]
-        elif rule[0] in ("session", "session_mean"):
-            if sessions_by_day is None:
-                sessions_by_day = _unique_sessions(grouped[SESSIONS_COLUMN])
-            field = rule[1]
-            if rule[0] == "session":
-                combined[col] = pd.Series(
-                    {day: sum(s[field] for s in found) for day, found in sessions_by_day.items()})
-            else:
-                values = {day: [s[field] for s in found if s[field] is not None]
-                          for day, found in sessions_by_day.items()}
-                combined[col] = pd.Series({
-                    day: sum(v) / len(v) if v else last.at[day, col] for day, v in values.items()})
-        else:
-            _, num, den, decimals = rule
-            num_sum, den_sum = grouped[num].sum(), grouped[den].sum()
-            ratio = num_sum / den_sum.where(den_sum > 0)
-            if decimals is not None:
-                ratio = ratio.round(decimals)
-            # nothing to average over in any file: fall back to the last row's value
-            combined[col] = ratio.where(den_sum > 0, last[col])
+        rule = rules.get(col, default)
+        match rule:
+            case Agg.SUM:
+                combined[col] = grouped[col].sum(min_count=1)
+            case Agg.MIN:
+                combined[col] = grouped[col].min()
+            case Agg.MAX:
+                combined[col] = grouped[col].max()
+            case Agg.LAST:
+                combined[col] = last[col]
+            case FromSessions(field=field, mean=mean):
+                if sessions_by_day is None:
+                    sessions_by_day = _unique_sessions(grouped[SESSIONS_COLUMN])
+                if not mean:
+                    combined[col] = pd.Series(
+                        {day: sum(getattr(s, field) for s in found) for day, found in sessions_by_day.items()})
+                else:
+                    values = {day: [getattr(s, field) for s in found if getattr(s, field) is not None]
+                              for day, found in sessions_by_day.items()}
+                    combined[col] = pd.Series({
+                        day: sum(v) / len(v) if v else last.at[day, col] for day, v in values.items()})
+            case Ratio(numerator=num, denominator=den, decimals=decimals):
+                num_sum, den_sum = grouped[num].sum(), grouped[den].sum()
+                ratio = num_sum / den_sum.where(den_sum > 0)
+                if decimals is not None:
+                    ratio = ratio.round(decimals)
+                # nothing to average over in any file: fall back to the last row's value
+                combined[col] = ratio.where(den_sum > 0, last[col])
+            case _:
+                raise ValueError(f"no combine rule {rule!r} for column {col!r}")
     combined = pd.DataFrame(combined).rename_axis(df.index.name)
     return combined if rest.empty else pd.concat([rest, combined])
 
 
-def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=None, combine=None):
+def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=None, combine=None,
+                    default=Agg.LAST, parallel=False):
     """
     Scans a specific folder for files matching a pattern, parses them,
     and aggregates them into a single DataFrame.
@@ -224,8 +187,10 @@ def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=N
             only, no folder) for every file that was skipped because it could not
             be parsed.
         combine (dict, optional): Rule per column for a day that appears in more
-            than one file (see RULES_*); columns without a rule keep the value
-            of the last file in name order.
+            than one file (Source.rules); columns without a rule follow `default`
+            (by default the value of the last file in name order).
+        default (Agg): rule of the columns not in `combine` (Source.other_columns).
+        parallel (bool): parse the files in a process pool (Source.parallel).
 
     Returns:
         pd.DataFrame: Combined and sorted DataFrame for the specific metric, one
@@ -239,7 +204,7 @@ def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=N
     print(f"   Loading {len(files)} files for {file_pattern}...")
 
     frames = []
-    for f, (chunk, error) in zip(files, _parse_files(files, parser_func)):
+    for f, (chunk, error) in zip(files, _parse_files(files, parser_func, parallel)):
         if error is not None:
             reason = _skip_reason(error, f)
             print(f"   Skipped {os.path.basename(f)}: {reason}")
@@ -259,18 +224,24 @@ def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=N
 
     # A day can appear in several files (the export is split by date range):
     # combine its parts per column instead of dropping all but one.
-    full_df = _combine_duplicate_days(full_df, combine or {})
+    full_df = _combine_duplicate_days(full_df, combine or {}, default)
     full_df = full_df.drop(columns=[c for c in full_df.columns if str(c).startswith("_")])
 
     full_df = full_df.sort_index()
     return full_df
 
 
+def load_source(data_dir, source, warnings=None):
+    """load_collection for one source of the load plan."""
+    return load_collection(data_dir, source.folder, source.pattern, parsers.parser_for(source),
+                           warnings, source.rules, source.other_columns, source.parallel)
+
+
 def merge_all_data(data_dir, start=None, end=None, progress_callback=None, warnings=None):
     """
     Main ETL Orchestrator.
 
-    1. Defines the loading plan for all metrics (Heart Rate, Sleep, Activity, etc.).
+    1. Follows the loading plan (load_plan.LOAD_PLAN) for all metrics (Heart Rate, Sleep, Activity, etc.).
     2. Loads and parses each collection independently.
     3. Merges all collections into a single Master DataFrame using Outer Join.
     4. Fills NaN values with 0 for activity-based columns.
@@ -292,57 +263,14 @@ def merge_all_data(data_dir, start=None, end=None, progress_callback=None, warni
     date_str = f"{start or 'first day'} to {end or 'last day'}"
     print(f"\n=== BUILDING MASTER DATASET ({date_str}) ===")
 
-    # Define Loading Plan: (Folder, Pattern, Parser, Label[, duplicate-day rules])
-    load_plan = [
-        ("Global Export Data", "resting_heart_rate-*.json",
-         parsers.parse_resting_heart_rate, "Resting heart rate"),
-        ("Global Export Data", "heart_rate-*.json",
-         parsers.heart_rate_intraday_detail, "Heart rate intraday", RULES_HEART_RATE),
-        ("Global Export Data", "steps-*.json", parsers.parse_steps_json, "Steps", RULES_STEPS),
-        ("Global Export Data", "distance-*.json", parsers.parse_distance_json, "Distance",
-         RULES_DISTANCE),
-        ("Global Export Data", "exercise-*.json", parsers.parse_exercise_json, "Exercise sessions",
-         RULES_EXERCISE),
-        ("Global Export Data", "weight-*.json", parsers.parse_weight, "Weight"),
-        ("Global Export Data", "calories-*.json", parsers.parse_calories_intraday, "Calories",
-         RULES_CALORIES),
-        ("Sleep Score", "sleep_score.csv", parsers.parse_sleep_score_csv, "Sleep scores"),
-        ("Global Export Data", "sleep-*.json", parsers.sleep_stages_detail, "Sleep stages",
-         RULES_SLEEP_STAGES),
-        ("Oxygen Saturation (SpO2)", "Daily SpO2 - *.csv", parsers.parse_spo2_csv, "SpO2"),
-        ("Heart Rate Variability",
-         "Daily Heart Rate Variability Summary - *.csv", parsers.parse_hrv_csv, "HRV"),
-        ("Stress Score", "Stress Score.csv", parsers.parse_stress_csv, "Stress scores"),
-        ("Global Export Data", "very_active_minutes-*.json",
-         parsers.parse_simple_activity_json, "Active minutes", RULES_ACTIVITY_MINUTES),
-        ("Global Export Data", "moderately_active_minutes-*.json",
-         parsers.parse_simple_activity_json, "Moderate activity", RULES_ACTIVITY_MINUTES),
-        ("Global Export Data", "lightly_active_minutes-*.json",
-         parsers.parse_simple_activity_json, "Light activity", RULES_ACTIVITY_MINUTES),
-        ("Global Export Data", "sedentary_minutes-*.json",
-         parsers.parse_simple_activity_json, "Sedentary minutes", RULES_ACTIVITY_MINUTES),
-        ("Physical Activity_GoogleData",
-         "cardio_acute_chronic_workload_ratio.csv", parsers.parse_acwr_csv, "ACWR"),
-        ("Physical Activity_GoogleData",
-         "demographic_vo2max.csv", parsers.parse_vo2max_csv, "VO2 Max"),
-        ("Physical Activity_GoogleData",
-         "daily_readiness.csv", parsers.parse_readiness_csv, "Readiness"),
-        ("Physical Activity_GoogleData", "daily_respiratory_rate.csv",
-         parsers.parse_respiratory_rate_csv, "Respiratory rate"),
-        ("Physical Activity_GoogleData", "daily_sleep_temperature_derivations.csv",
-         parsers.parse_skin_temperature_csv, "Skin temperature"),
-        ("Physical Activity_GoogleData", "time_in_heart_rate_zone_*.csv",
-         parsers.parse_active_zones_csv, "HR zones", RULES_ZONES),
-    ]
-
-    total = len(load_plan)
+    total = len(LOAD_PLAN)
     datasets = []
-    for i, (folder, pattern, func, label, *rules) in enumerate(load_plan):
-        # Progress from 10% to 65% spread across all collections
+    for i, source in enumerate(LOAD_PLAN):
+        # Progress from 10% to 65% spread across all sources
         pct = 10 + int((i / total) * 55)
         if progress_callback:
-            progress_callback(pct, f"Loading {label}")
-        datasets.append(load_collection(data_dir, folder, pattern, func, warnings, *rules))
+            progress_callback(pct, f"Loading {source.label}")
+        datasets.append(load_source(data_dir, source, warnings))
 
     if progress_callback:
         progress_callback(65, "Merging datasets")

@@ -48,7 +48,7 @@ def load_data():
 
     df = pd.read_csv(DATA_FILE)
     df['date'] = pd.to_datetime(df['date'])
-    df.set_index('date', inplace=True)
+    df = df.set_index('date')
     return df
 
 def load_metrics(target_date=None):

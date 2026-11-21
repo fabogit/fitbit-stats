@@ -11,8 +11,8 @@ a = Analysis(
         'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto',
         'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan', 'uvicorn.lifespan.on',
-        'modules.briefing', 'modules.etl', 'modules.metrics', 'modules.parsers',
-        'modules.pipeline', 'modules.run_config', 'jobs'
+        'modules.briefing', 'modules.etl', 'modules.load_plan', 'modules.metrics', 'modules.parsers',
+        'modules.pipeline', 'modules.run_config', 'modules.sources', 'jobs'
     ],
     hookspath=[],
     hooksconfig={},

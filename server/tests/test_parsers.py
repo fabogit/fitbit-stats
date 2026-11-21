@@ -2,7 +2,8 @@
 import pandas as pd
 import pytest
 
-from modules import parsers
+from modules import load_plan, parsers
+from modules.sources import Special
 
 GLOBAL = "Global Export Data"
 GOOGLE = "Physical Activity_GoogleData"
@@ -27,8 +28,11 @@ def json_file(tmp_path, text, name="x.json"):
 # --- every parser is registered, so a new one gets a test ---
 
 def test_every_parser_function_is_in_the_table(parser_table):
-    in_module = {n for n in dir(parsers) if n.startswith("parse_")}
-    assert in_module == {f.__name__ for f in parser_table.values()}
+    in_table = {s.key for v in parser_table.values() for s in (v if isinstance(v, tuple) else (v,))}
+    assert in_table == {s.key for s in load_plan.LOAD_PLAN}
+    special = {n for n in dir(parsers) if n.startswith("parse_")}
+    assert special == {s.reader.parse.__name__ for s in load_plan.LOAD_PLAN
+                       if isinstance(s.reader, Special)}
 
 
 # --- resting heart rate ---
@@ -157,8 +161,9 @@ def test_zones_unknown_zone_name_gets_a_generic_column(parse, tmp_path):
     assert parse("active_zones", f)["zone_some_new"].tolist() == [1]
 
 
-def test_zones_missing_column_returns_none(parse, tmp_path):
-    assert parse("active_zones", csv_file(tmp_path, "timestamp,other\n2024-03-01T10:00:00Z,1\n")) is None
+def test_zones_missing_column_is_reported(parse, tmp_path):
+    with pytest.raises(parsers.MissingColumns):
+        parse("active_zones", csv_file(tmp_path, "timestamp,other\n2024-03-01T10:00:00Z,1\n"))
 
 
 # --- SpO2 ---
@@ -279,9 +284,10 @@ def test_skin_temperature_is_nightly_minus_baseline(parse, export_dir):
 
 @pytest.mark.parametrize("key", ["hrv", "stress", "acwr", "vo2max", "readiness",
                                  "respiratory_rate", "skin_temperature"])
-def test_csv_without_the_key_column_returns_none(parse, tmp_path, key):
+def test_csv_without_the_key_column_is_reported(parse, tmp_path, key):
     f = csv_file(tmp_path, "timestamp,other\n2024-03-28T00:00:00Z,1\n")
-    assert parse(key, f) is None
+    with pytest.raises(parsers.MissingColumns):
+        parse(key, f)
 
 
 # --- exercise ---

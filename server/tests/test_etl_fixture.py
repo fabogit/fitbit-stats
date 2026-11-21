@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from modules import etl, parsers
+from conftest import S, parser
+from modules import etl
 
 FIXTURES = Path(__file__).parent / "fixtures"
 GLOBAL = "Global Export Data"
@@ -70,7 +71,7 @@ def test_filter_by_date_leaves_an_unparseable_index_alone():
 # --- load_collection ---
 
 def test_load_collection_concatenates_files_in_date_order(export_dir):
-    df = etl.load_collection(export_dir, GLOBAL, "calories-*.json", parsers.parse_calories_intraday)
+    df = etl.load_collection(export_dir, GLOBAL, "calories-*.json", parser("calories"))
     assert df.index.is_monotonic_increasing
     # 7 days over two monthly files, plus one day with 0 calories in the April file
     assert dates(df) == DAYS + ["2024-04-05"]
@@ -79,13 +80,13 @@ def test_load_collection_concatenates_files_in_date_order(export_dir):
 
 
 def test_load_collection_strips_timezones(export_dir):
-    df = etl.load_collection(export_dir, GOOGLE, "time_in_heart_rate_zone_*.csv", parsers.parse_active_zones_csv)
+    df = etl.load_collection(export_dir, GOOGLE, "time_in_heart_rate_zone_*.csv", parser("active_zones"))
     assert df.index.tz is None
     assert dates(df) == [DAYS[i] for i in (0, 1, 2, 4, 5, 6)]
 
 
 def test_load_collection_without_files_is_empty(tmp_path):
-    assert etl.load_collection(tmp_path, GLOBAL, "steps-*.json", parsers.parse_steps_json).empty
+    assert etl.load_collection(tmp_path, GLOBAL, "steps-*.json", parser("steps")).empty
 
 
 def test_load_collection_one_bad_file_keeps_the_others(tmp_path):
@@ -95,7 +96,7 @@ def test_load_collection_one_bad_file_keeps_the_others(tmp_path):
         json.dumps([{"dateTime": "03/01/24 09:00:00", "value": "100"}]))
     (folder / "steps-2024-04-01.json").write_text("{ not json")
     warnings = []
-    df = etl.load_collection(tmp_path, GLOBAL, "steps-*.json", parsers.parse_steps_json, warnings)
+    df = etl.load_collection(tmp_path, GLOBAL, "steps-*.json", parser("steps"), warnings)
     assert df["steps"].tolist() == [100.0]
     assert [w["file"] for w in warnings] == ["steps-2024-04-01.json"]
 
@@ -106,8 +107,8 @@ def test_load_collection_overlapping_days_leave_one_row_per_day(tmp_path):
     folder.mkdir()
     for name, value in (("calories-2024-03-01.json", "10"), ("calories-2024-03-15.json", "20")):
         (folder / name).write_text(json.dumps([{"dateTime": "03/20/24 12:00:00", "value": value}]))
-    df = etl.load_collection(tmp_path, GLOBAL, "calories-*.json", parsers.parse_calories_intraday,
-                             combine=etl.RULES_CALORIES)
+    df = etl.load_collection(tmp_path, GLOBAL, "calories-*.json", parser("calories"),
+                             combine=S["calories"].rules)
     assert dates(df) == ["2024-03-20"]
     assert df["calories_total"].tolist() == [30.0]
 
@@ -118,7 +119,7 @@ def test_load_collection_without_rules_keeps_the_last_file(tmp_path):
     # written in reverse name order on purpose
     for name, value in (("calories-2024-03-15.json", "20"), ("calories-2024-03-01.json", "10")):
         (folder / name).write_text(json.dumps([{"dateTime": "03/20/24 12:00:00", "value": value}]))
-    df = etl.load_collection(tmp_path, GLOBAL, "calories-*.json", parsers.parse_calories_intraday)
+    df = etl.load_collection(tmp_path, GLOBAL, "calories-*.json", parser("calories"))
     assert df["calories_total"].tolist() == [20.0]
 
 
