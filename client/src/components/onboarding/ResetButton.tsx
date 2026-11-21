@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { Notice } from "@/components/ui/notice";
 import { apiFetch } from "@/lib/api";
 import { useAppDispatch } from "../../store/store";
 import { fetchHealthData } from "../../features/dashboard/dashboardSlice";
@@ -9,10 +10,14 @@ interface ResetButtonProps {
   disabled: boolean;
   /** The data was deleted: the form empties. */
   onCleared(): void;
+  /** What happened, for the form to show next to the buttons. */
+  onOutcome(notice: Notice): void;
 }
 
+const BUSY_TEXT = "A calculation is running. Wait for it to finish before deleting data.";
+
 /** Factory reset: deletes the saved profile and the calculated data. */
-export function ResetButton({ disabled, onCleared }: ResetButtonProps) {
+export function ResetButton({ disabled, onCleared, onOutcome }: ResetButtonProps) {
   const dispatch = useAppDispatch();
   const [pending, setPending] = useState(false);
 
@@ -26,18 +31,22 @@ export function ResetButton({ disabled, onCleared }: ResetButtonProps) {
     try {
       const resp = await apiFetch("/api/clear", { method: "DELETE" });
       if (resp.status === 409) {
-        alert("A calculation is running. Wait for it to finish before deleting data.");
+        const body = (await resp.json().catch(() => null)) as { detail?: unknown } | null;
+        const detail = typeof body?.detail === "string" ? body.detail : BUSY_TEXT;
+        onOutcome({ kind: "error", text: detail });
         return;
       }
-      if (!resp.ok) throw new Error(`Clear request failed (HTTP ${resp.status})`);
-
+      if (!resp.ok) {
+        onOutcome({ kind: "error", text: `Could not delete the data (HTTP ${resp.status}).` });
+        return;
+      }
       onCleared();
-      // Calling fetchHealthData will reload empty state causing NoDataState to re-render in Dashboard
+      // The empty data makes the dashboard show its "no data" state.
       dispatch(fetchHealthData());
-      alert("All application data has been successfully deleted.");
+      onOutcome({ kind: "success", text: "All data deleted." });
     } catch (e) {
       console.error("Error clearing data:", e);
-      alert("Failed to clear data.");
+      onOutcome({ kind: "error", text: "Could not reach the local server." });
     } finally {
       setPending(false);
     }

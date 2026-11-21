@@ -14,9 +14,8 @@ export type StartResult =
   | { kind: "started" }
   /** A run was already in progress; the store now shows it. */
   | { kind: "busy" }
-  | { kind: "failed" };
-
-export const BUSY_MESSAGE = "A calculation is already running.";
+  /** The server answered with another status (for example 502 while it restarts). */
+  | { kind: "failed"; status: number };
 
 /**
  * Asks the server to start a calculation and puts the job it answers with in
@@ -38,5 +37,5 @@ export async function startJob(dispatch: AppDispatch, body: StartBody): Promise<
     return { kind: "busy" };
   }
   console.error("Failed to start processing", resp.status);
-  return { kind: "failed" };
+  return { kind: "failed", status: resp.status };
 }

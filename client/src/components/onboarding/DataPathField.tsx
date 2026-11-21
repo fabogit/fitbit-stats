@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, AlertCircle, Search, Loader2 } from "lucide-react";
+import { FieldError } from "./ProfileFields";
 import type { PathCheck } from "./usePathCheck";
 import type { ServerState } from "./useProfileForm";
 
@@ -14,6 +15,8 @@ interface DataPathFieldProps {
   check: PathCheck;
   server: ServerState;
   onRetryServer(): void;
+  /** Error found when the form was submitted (empty path, relative path on the desktop). */
+  error?: string;
   disabled?: boolean;
 }
 
@@ -24,9 +27,11 @@ export function DataPathField({
   check,
   server,
   onRetryServer,
+  error,
   disabled,
 }: DataPathFieldProps) {
   const selectOnClick = useRef(false);
+  const message = error ?? (check.status === "invalid" ? check.error : null);
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -105,11 +110,13 @@ export function DataPathField({
             selectOnClick.current = false;
           }}
           onChange={(e) => onChange(e.target.value)}
+          aria-invalid={message ? true : undefined}
+          aria-describedby={message ? "data_path-error" : undefined}
           className={`h-12 pr-24 transition-colors ${
-            check.status === "valid"
-              ? "border-green-500/50 bg-green-500/5"
-              : check.status === "invalid"
-                ? "border-red-500/50 bg-red-500/5"
+            message
+              ? "border-red-500/50 bg-red-500/5"
+              : check.status === "valid"
+                ? "border-green-500/50 bg-green-500/5"
                 : ""
           }`}
         />
@@ -117,10 +124,10 @@ export function DataPathField({
           {check.status === "checking" && (
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           )}
-          {check.status === "valid" && (
+          {!message && check.status === "valid" && (
             <CheckCircle2 className="w-5 h-5 text-green-500 animate-in zoom-in duration-300" />
           )}
-          {check.status === "invalid" && (
+          {message && (
             <AlertCircle className="w-5 h-5 text-red-500 animate-in shake duration-300" />
           )}
         </div>
@@ -139,11 +146,7 @@ export function DataPathField({
           </button>
         </p>
       )}
-      {check.status === "invalid" && (
-        <p className="text-xs text-red-500 mt-1 animate-in fade-in slide-in-from-top-1">
-          {check.error}
-        </p>
-      )}
+      <FieldError id="data_path-error" message={message ?? undefined} />
       <p className="text-[11px] text-muted-foreground/60 leading-tight mt-2">
         {isTauri()
           ? "Choose with Browse, or enter the absolute path to your Fitbit export folder: the one that contains"
