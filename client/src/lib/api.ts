@@ -1,17 +1,24 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
 /**
- * Centralized API base URL.
+ * Centralized API base URL. The only place that tells the desktop app from the
+ * web build.
  *
- * We use 127.0.0.1 explicitly instead of "localhost" to avoid the IPv6
- * resolution issue on Windows where "localhost" may resolve to "::1" (IPv6)
- * while the uvicorn server only listens on 127.0.0.1 (IPv4), causing
- * WebSocket and HTTP connections to fail silently.
+ * Desktop: the sidecar listens on 127.0.0.1:8000. We use 127.0.0.1 explicitly
+ * instead of "localhost" to avoid the IPv6 resolution issue on Windows where
+ * "localhost" may resolve to "::1" (IPv6) while the uvicorn server only listens
+ * on 127.0.0.1 (IPv4), causing WebSocket and HTTP connections to fail silently.
+ *
+ * Web (Docker, and `pnpm dev` through the Vite proxy): the page and the API
+ * share one origin, so requests are relative and the WebSocket URL follows
+ * the page's own address. Nginx (or Vite) forwards `/api` and `/ws`.
  */
-export const SERVER_URL = {
-  API: "http://127.0.0.1:8000",
-  WS: "ws://127.0.0.1:8000",
-};
+export const SERVER_URL = isTauri()
+  ? { API: "http://127.0.0.1:8000", WS: "ws://127.0.0.1:8000" }
+  : {
+      API: "",
+      WS: `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`,
+    };
 
 let tokenPromise: Promise<string | null> | null = null;
 

@@ -18,6 +18,14 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    // The web build calls the API with relative URLs (see src/lib/api.ts); in
+    // development Vite forwards them to the API listening on loopback.
+    proxy: {
+      "/api": "http://127.0.0.1:8000",
+      "/ws": { target: "ws://127.0.0.1:8000", ws: true },
+    },
+  },
   build: {
     chunkSizeWarningLimit: 500,
     rollupOptions: {

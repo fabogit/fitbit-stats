@@ -3,8 +3,7 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    # No published port: the web UI reaches the API through the frontend's /api and /ws.
     volumes:
       - ./server:/app
       - ./data:/app/data
@@ -13,9 +12,11 @@ services:
       - DATA_DIR=/app/data
       - CLIENT_PUBLIC_DIR=/app/shared
       - PYTHONUNBUFFERED=1
-      # Web origins allowed to call the API (comma-separated). Must match the
-      # address you open the frontend from.
-      - FITSTATS_ALLOWED_ORIGINS=http://localhost:8080,http://127.0.0.1:8080
+      # Not needed for the web UI: the status WebSocket is accepted from a page
+      # served at the address the request was sent to, whatever that address is.
+      # Set it only to allow another origin (comma-separated), for example when a
+      # proxy in front of the frontend rewrites the Host header:
+      # - FITSTATS_ALLOWED_ORIGINS=https://fitstats.example
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
       interval: 30s
