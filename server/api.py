@@ -1,4 +1,5 @@
 import hmac
+import ipaddress
 import logging
 import multiprocessing
 import os
@@ -8,6 +9,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import List, Literal
+from urllib.parse import urlsplit
 
 import uvicorn
 from pydantic import BaseModel, Field, field_validator
@@ -58,6 +60,45 @@ def build_allowed_origins(extra: str = "") -> List[str]:
 ALLOWED_ORIGINS = build_allowed_origins(os.environ.get(ORIGINS_ENV, ""))
 
 
+DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
+
+
+def _normalized_host(hostname: str):
+    """Lower-cased host name; IP literals in their canonical form (so IPv6 spellings compare equal)."""
+    try:
+        return ipaddress.ip_address(hostname)
+    except ValueError:
+        return hostname.lower()
+
+
+def origin_matches_host(origin: str, host: str) -> bool:
+    """True when the host and port of `origin` are those the request was sent to.
+
+    `host` is the request's Host header. The scheme is ignored, because behind a
+    TLS-terminating proxy the server does not see it; only the port that the
+    origin's scheme implies is used when either side omits it. An unparsable or
+    "null" origin, a Host that is missing or not a plain host[:port], never match.
+    """
+    if not origin or not host or any(c in host for c in "/@?# "):
+        return False
+    try:
+        parts = urlsplit(origin)
+        scheme = parts.scheme.lower()
+        if scheme not in DEFAULT_PORTS or not parts.hostname or parts.path or parts.query \
+                or parts.fragment or parts.username is not None:
+            return False
+        origin_port = DEFAULT_PORTS[scheme] if parts.port is None else parts.port
+        target = urlsplit("//" + host)
+        if not target.hostname:
+            return False
+        # A Host without a port is the default one: for the origin's own scheme.
+        host_port = DEFAULT_PORTS[scheme] if target.port is None else target.port
+    except ValueError:  # malformed port or bracketed host
+        return False
+    return (_normalized_host(parts.hostname) == _normalized_host(target.hostname)
+            and origin_port == host_port)
+
+
 def expected_token() -> str:
     return os.environ.get(TOKEN_ENV, "")
 
@@ -95,8 +136,11 @@ class TokenMiddleware:
         if scope["type"] == "websocket":
             # Browsers do not apply CORS to WebSockets, so check the origin here.
             # A missing Origin (non-browser client) is left to the token check.
+            # Accepted: the listed origins, and a page served from the very
+            # host and port the request was sent to (the web UI behind its proxy).
             origin = _header(scope, b"origin")
-            if origin and origin not in ALLOWED_ORIGINS:
+            if (origin and origin not in ALLOWED_ORIGINS
+                    and not origin_matches_host(origin, _header(scope, b"host"))):
                 return await self._reject_websocket(receive, send)
         expected = expected_token()
         # Preflight requests carry no credentials by design; CORS answers them.

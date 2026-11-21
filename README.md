@@ -87,12 +87,12 @@ For users who prefer a web-based interface or home lab deployment, a full Docker
    ```bash
    docker-compose up -d --build
    ```
-5. Open your browser to [**http://localhost:8080**](http://localhost:8080).
+5. Open your browser to [**http://localhost:8080**](http://localhost:8080), or to `http://<host>:8080` from another machine on your network.
 
 ### Services
 
-- **Frontend (port 8080):** The web dashboard served by Nginx.
-- **API Server (port 8000):** The Python/FastAPI engine handling calculations.
+- **Frontend (port 8080):** The web dashboard served by Nginx. It also proxies the API (`/api/...`) and the status WebSocket (`/ws/...`) to the API server, so the browser only ever talks to this port.
+- **API Server:** The Python/FastAPI engine handling calculations. Its port (8000) is not published on the host: it is reachable only from inside the Docker network, through the frontend.
 
 The stack does not watch the `data/` folder. After adding or changing files there, recalculate from the web interface, as in the desktop app.
 
@@ -100,9 +100,11 @@ The stack does not watch the `data/` folder. After adding or changing files ther
 
 ### Access to the API
 
-The API only accepts browser requests from an explicit list of allowed origins: the desktop app, the Vite development server, and the web origins listed in the `FITSTATS_ALLOWED_ORIGINS` environment variable (comma-separated, set for the `api-server` service in `docker-compose.yml`). The default value covers the frontend on port 8080 at `localhost` and `127.0.0.1`. If you open the web UI from a different address or port (for example another host name), add that origin to the variable.
+The API is reached at `http://<host>:8080/api/` (and the status WebSocket at `/ws/status`); port 8000 is no longer published on the host. If you used to call the API directly on port 8000, use the `/api/` path on port 8080 instead.
 
-The desktop app additionally protects the API with a token generated at every launch. The Docker stack has no desktop shell to issue one, so it does not use a token (the server notes this once in its log at startup). Keep the API port (8000) reachable only from machines you trust.
+The API only accepts a status WebSocket from an explicit list of allowed origins (the desktop app and the Vite development server), or from a page served at the host and port the request was sent to. That second rule is what lets the web UI work from whatever address you open it at. The `FITSTATS_ALLOWED_ORIGINS` environment variable (comma-separated, optional, commented out in `docker-compose.yml`) adds further origins; you only need it if something in front of the frontend, such as another proxy, changes the `Host` header.
+
+The desktop app additionally protects the API with a token generated at every launch. The Docker stack has no desktop shell to issue one, so it does not use a token (the server notes this once in its log at startup). Anyone who can reach port 8080 can use the API, so expose that port only to machines you trust.
 
 ---
 
