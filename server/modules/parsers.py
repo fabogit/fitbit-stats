@@ -1,11 +1,9 @@
-# backend/modules/parsers.py
 """Parsers: one per source, driven by its declaration in load_plan.py.
 
-Generic sources are read by read_json_daily / read_csv_daily from their declaration; the
-irregular ones have a function of their own (Special). Every parser returns a
-DataFrame indexed by 'date', or None when the file has no data. Columns whose
-name starts with "_" are helpers for the ETL, which drops them after
-combining the files of a source.
+Generic sources are read by read_json_daily / read_csv_daily; the irregular
+ones have a function of their own (Special). A parser returns a DataFrame
+indexed by 'date', or None when the file has no data. Columns whose name
+starts with "_" are helpers the ETL drops after combining a source's files.
 """
 import json
 from functools import partial
@@ -17,10 +15,7 @@ from modules.sources import Agg, Column, CsvDaily, Day, Difference, JsonDaily, S
 
 
 class MissingColumns(ValueError):
-    """A file lacks a column its source needs (or its date column).
-
-    The ETL reports the file as a warning with the names of the columns.
-    """
+    """A file lacks a column its source needs (or its date): the ETL reports it as a warning."""
 
 
 def _require(missing):
@@ -47,10 +42,7 @@ def _read_json(file_path):
 # --- generic readers ---
 
 def _present(df, columns: tuple[Column, ...], date_field: str):
-    """The declared columns found in df, or None when none of them is.
-
-    Raises MissingColumns when the date field or a required column is missing.
-    """
+    """The declared columns found in df (None if none); MissingColumns if a required one is not."""
     missing = [date_field] if date_field not in df.columns else []
     present = []
     for c in columns:
@@ -78,7 +70,7 @@ def _values(df, c: Column, numeric: bool):
 
 
 def _frame(df, present, dates, numeric, agg: Agg | None):
-    """The declared columns of df, indexed by day and reduced to one row per day with `agg`."""
+    """The declared columns of df, indexed by day, one row per day with `agg` (if any)."""
     out = pd.DataFrame({c.name: _values(df, c, numeric) for c in present})
     out.index = pd.DatetimeIndex(dates, name='date')
     if agg is None:
@@ -90,13 +82,9 @@ def _frame(df, present, dates, numeric, agg: Agg | None):
 
 
 def read_json_daily(reader: JsonDaily, columns, file_path):
-    """Read one file of a JsonDaily source: a list of records with a date field.
-
-    Values are converted to numbers (what cannot be converted becomes NaN),
-    scaled and rounded as declared, then reduced to one row per day with
-    `reader.per_day`. A declared column that is not required may be missing
-    from the file; a missing required column or date raises MissingColumns.
-    """
+    """One file of a JsonDaily source. Values become numbers (NaN if they cannot), are
+    scaled and rounded as declared, then reduced to one row per day with `per_day`.
+    An optional column may be missing; a missing required one raises MissingColumns."""
     df = pd.DataFrame(_read_json(file_path))
     if df.empty:
         return None
@@ -108,11 +96,8 @@ def read_json_daily(reader: JsonDaily, columns, file_path):
 
 
 def read_csv_daily(reader: CsvDaily, columns, file_path):
-    """Read one file of a CsvDaily source: a CSV with a date column.
-
-    Same rules as read_json_daily, except that values are kept as they are
-    read (no number conversion) and rows can be filtered first (`keep_rows`).
-    """
+    """One file of a CsvDaily source: as read_json_daily, but values are not converted
+    to numbers and rows can be filtered first (`keep_rows`)."""
     df = _read_csv(file_path)
     df.columns = df.columns.str.strip()
     present = _present(df, columns, reader.date_field)
@@ -131,66 +116,42 @@ def read_csv_daily(reader: CsvDaily, columns, file_path):
 # --- special sources ---
 
 def parse_resting_heart_rate(file_path):
-    """
-    Parses 'resting_heart_rate-YYYY-MM-DD.json'.
-
-    Structure: Nested JSON where daily values are inside 'value' -> 'value'.
-    Entries without a date or with a 0 value, or whose 'value' is not an
-    object, are skipped.
-
-    Args:
-        file_path (str): Path to the JSON file.
-
-    Returns:
-        pd.DataFrame: A DataFrame indexed by 'date' with a 'resting_bpm' column.
-                      Returns None if no valid records are found.
-    """
-    data = _read_json(file_path)
+    """'resting_heart_rate-*.json': values inside 'value' -> {'date', 'value'}; entries
+    without a date or with a 0 value, or whose 'value' is not an object, are skipped."""
     records = []
-    for entry in data:
+    for entry in _read_json(file_path):
         val_obj = entry.get('value')
         if not isinstance(val_obj, dict):
             continue
-        date_str = val_obj.get('date')
-        bpm = val_obj.get('value')
+        date_str, bpm = val_obj.get('date'), val_obj.get('value')
         if date_str and bpm:
             records.append({'date': date_str, 'resting_bpm': bpm})
     if not records:
         return None
     df = pd.DataFrame(records)
     df['date'] = pd.to_datetime(df['date'], format='%m/%d/%y')
-    df = df.set_index('date')
-    return df
+    return df.set_index('date')
 
 
 def parse_heart_rate_intraday(file_path):
-    """
-    Parses 'heart_rate-YYYY-MM-DD.json': daily min, max and average BPM.
+    """'heart_rate-*.json': daily min, max and average BPM, plus '_bpm_sum' and '_bpm_n'
+    (sum and count of the day's samples in this file) so the ETL can recompute the
+    average of a day split across two files. Samples without a BPM (or 0) are skipped.
 
-    Returns a DataFrame indexed by 'date' with 'min_bpm', 'max_bpm' and
-    'avg_bpm', plus two helper columns, '_bpm_sum' and '_bpm_n' (sum and count
-    of the day's samples in this file). They let the ETL recompute the average
-    of a day that is split across two files; the ETL drops every column that
-    starts with an underscore. Returns None when the file has no valid samples.
-
-    This source is about 94% of the ETL time, so the ~33,000 samples per file
-    are aggregated with plain dicts keyed by day instead of building a pandas
-    DataFrame and converting every timestamp. Output is identical to the old
-    pandas implementation (avg_bpm rounded to one decimal).
+    This source is about 94% of the ETL time, so the ~33,000 samples per file are
+    aggregated with plain dicts keyed by day instead of a pandas DataFrame.
     """
     data = _read_json(file_path)
     if not data:
         return None
-
-    # Intraday detail is inside 'value' -> 'bpm'. Timestamps look like
-    # 'MM/DD/YY HH:MM:SS', so the first 8 characters identify the day.
+    # Timestamps look like 'MM/DD/YY HH:MM:SS', so the first 8 characters identify the day.
     acc = {}
     for entry in data:
         dt = entry.get('dateTime')
         try:
             bpm = entry['value']['bpm']
         except (KeyError, TypeError, IndexError):
-            continue        # a sample without a BPM reading is skipped, not the whole file
+            continue
         if not dt or not bpm:
             continue
         day = dt[:8]
@@ -204,7 +165,6 @@ def parse_heart_rate_intraday(file_path):
                 a[1] = bpm
             a[2] += bpm
             a[3] += 1
-
     if not acc:
         return None
     days = sorted(acc, key=lambda d: (d[6:8], d[0:2], d[3:5]))
@@ -219,39 +179,25 @@ def parse_heart_rate_intraday(file_path):
     }, index=index)
 
 
-# Current export names (OUT_OF_RANGE, LIGHT, MODERATE, VIGOROUS) plus the
-# older FAT_BURN, CARDIO and PEAK, which are still accepted.
 ZONE_NAMES = {
-    'OUT_OF_RANGE': 'zone_out_of_range',
-    'LIGHT': 'zone_light',
-    'MODERATE': 'zone_moderate',
-    'VIGOROUS': 'zone_vigorous',
-    'FAT_BURN': 'zone_fat_burn',
-    'CARDIO': 'zone_cardio',
-    'PEAK': 'zone_peak',
+    # current export names, then the older ones that are still accepted
+    'OUT_OF_RANGE': 'zone_out_of_range', 'LIGHT': 'zone_light',
+    'MODERATE': 'zone_moderate', 'VIGOROUS': 'zone_vigorous',
+    'FAT_BURN': 'zone_fat_burn', 'CARDIO': 'zone_cardio', 'PEAK': 'zone_peak',
 }
 
 
 def parse_active_zones_csv(file_path):
-    """
-    Parses 'time_in_heart_rate_zone_YYYY-MM-DD.csv' (minute-by-minute logs).
+    """'time_in_heart_rate_zone_YYYY-MM-DD.csv': one row per minute, minutes per day and zone.
+
+    An unknown zone name becomes a 'zone_<name>' column.
     """
     df = _read_csv(file_path)
     _require([c for c in ('timestamp', 'heart rate zone type') if c not in df.columns])
-
     df['date'] = pd.to_datetime(df['timestamp']).dt.normalize()
-
-    # Group by date and zone type, count minutes (each row is 1 min)
-    # Pivot to get zones as columns
-    pivot = df.groupby(['date', 'heart rate zone type']
-                       ).size().unstack(fill_value=0)
-
-    # Rename columns based on map
-    rename_cols = {col: ZONE_NAMES.get(
-        col, f"zone_{col.lower().replace(' ', '_')}") for col in pivot.columns}
-    pivot = pivot.rename(columns=rename_cols)
-
-    return pivot
+    pivot = df.groupby(['date', 'heart rate zone type']).size().unstack(fill_value=0)
+    return pivot.rename(columns={
+        col: ZONE_NAMES.get(col, f"zone_{col.lower().replace(' ', '_')}") for col in pivot.columns})
 
 
 class SleepSession(NamedTuple):
@@ -263,44 +209,33 @@ class SleepSession(NamedTuple):
 
 
 def parse_sleep_stages(file_path):
-    """
-    Parses 'sleep-YYYY-MM-DD.json' (Detailed Logs).
+    """'sleep-*.json': minutes of deep, light, REM and awake sleep per day (sessions added up).
 
-    Extracts specific sleep stages: Deep, Light, REM and Awake, in minutes.
-    Handles mapping differences between 'classic' logs (naps) and 'stages' logs
-    (asleep counts as light, awake and restless as awake). A day's sessions are
-    added up.
-
-    Returns a DataFrame indexed by 'date' with 'sleep_deep', 'sleep_light',
-    'sleep_rem' and 'sleep_awake', plus a helper column '_sessions': for each
-    day, the list of SleepSession (logId, deep, light, rem, awake) of its
-    sessions in this file. Consecutive export files can both contain the same
-    session; the ETL uses the logId to count it once when it combines a day
-    found in two files, and drops every column that starts with an underscore.
+    'classic' logs (naps) are mapped onto the stages: asleep -> light, awake + restless
+    -> awake. '_sessions' lists each day's SleepSession of this file, so the ETL counts
+    a session found in two overlapping files once (by logId).
     """
-    data = _read_json(file_path)
     records = []
     sessions = {}
-    for entry in data:
+    for entry in _read_json(file_path):
         date_str = entry.get('dateOfSleep')
+        if not date_str:
+            continue
         summary = entry.get('levels', {}).get('summary', {})
-        if date_str:
-            light = summary.get('light', {}).get(
-                'minutes', 0) + summary.get('asleep', {}).get('minutes', 0)
-            deep = summary.get('deep', {}).get('minutes', 0)
-            rem = summary.get('rem', {}).get('minutes', 0)
-            awake = summary.get('wake', {}).get('minutes', 0) + summary.get(
-                'awake', {}).get('minutes', 0) + summary.get('restless', {}).get('minutes', 0)
-            records.append({'date': date_str, 'sleep_deep': deep,
-                           'sleep_light': light, 'sleep_rem': rem, 'sleep_awake': awake})
-            sessions.setdefault(date_str, []).append(
-                SleepSession(entry.get('logId'), deep, light, rem, awake))
+
+        def minutes(stage):
+            return summary.get(stage, {}).get('minutes', 0)
+        s = SleepSession(entry.get('logId'), minutes('deep'),
+                         minutes('light') + minutes('asleep'), minutes('rem'),
+                         minutes('wake') + minutes('awake') + minutes('restless'))
+        records.append({'date': date_str, 'sleep_deep': s.deep, 'sleep_light': s.light,
+                        'sleep_rem': s.rem, 'sleep_awake': s.awake})
+        sessions.setdefault(date_str, []).append(s)
     if not records:
         return None
     df = pd.DataFrame(records)
     df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
-    df = df.set_index('date')
-    out = df.groupby('date').sum()
+    out = df.set_index('date').groupby('date').sum()
     out['_sessions'] = pd.Series(
         [sessions[d.strftime('%Y-%m-%d')] for d in out.index], index=out.index, dtype=object)
     return out
@@ -315,77 +250,48 @@ class ExerciseSession(NamedTuple):
 
 
 def parse_exercise_json(file_path):
-    """
-    Parses 'exercise-*.json'.
-
-    Returns a DataFrame indexed by 'date' with 'exercise_duration' (minutes),
-    'exercise_calories', 'exercise_count' and 'exercise_aef' (mean of
-    calories / average heart rate over the day's sessions that have a heart
-    rate; empty when none has), plus a helper column '_sessions': for each
-    day, the list of ExerciseSession (logId, minutes, calories, 1, efficiency
-    or None) of its sessions in this file. Consecutive export files can both
-    contain the same session; the ETL uses the logId to count it once when it
-    combines a day found in two files, and drops every column that starts
-    with an underscore.
+    """'exercise-*.json': per day 'exercise_duration' (minutes), 'exercise_calories',
+    'exercise_count' and 'exercise_aef' (mean of calories / average heart rate over the
+    sessions that have one; empty when none has). '_sessions' lists each day's
+    ExerciseSession of this file, so the ETL counts one found in two files once (by logId).
     """
     data = _read_json(file_path)
     if not data:
         return None
-    records = []
+    records, found = [], []
     for entry in data:
         dt = entry.get('startTime')
         if not dt:
             continue
-        dur_ms = entry.get('duration', 0)
-        dur_min = dur_ms / 60000.0
+        dur_min = entry.get('duration', 0) / 60000.0
         cals = entry.get('calories', 0)
-
-        recs = {
-            'date': dt,
-            'exercise_duration': dur_min,
-            'exercise_calories': cals,
-            'exercise_count': 1
-        }
-        aef = None
+        rec = {'date': dt, 'exercise_duration': dur_min, 'exercise_calories': cals,
+               'exercise_count': 1}
         avg_hr = entry.get('averageHeartRate')
+        aef = None
         if avg_hr and avg_hr > 0:
             aef = cals / avg_hr
-            recs['exercise_aef'] = aef
-        recs['_session'] = ExerciseSession(entry.get('logId'), dur_min, cals, 1, aef)
-
-        records.append(recs)
-
+            rec['exercise_aef'] = aef
+        records.append(rec)
+        found.append(ExerciseSession(entry.get('logId'), dur_min, cals, 1, aef))
     if not records:
         return None
-
     df = pd.DataFrame(records)
     df['date'] = pd.to_datetime(df['date'], format='%m/%d/%y %H:%M:%S').dt.normalize()
-
-    sessions = {}
-    for day, session in zip(df['date'], df['_session']):
-        sessions.setdefault(day, []).append(session)
-    df = df.drop(columns='_session')
-
     if 'exercise_aef' not in df.columns:
         df['exercise_aef'] = float('nan')     # no session has a heart rate: empty, not 0
-
-    stats = df.groupby('date').agg({
-        'exercise_duration': 'sum',
-        'exercise_calories': 'sum',
-        'exercise_count': 'sum',
-        'exercise_aef': 'mean',
-    })
-    stats['_sessions'] = pd.Series(
-        [sessions[d] for d in stats.index], index=stats.index, dtype=object)
+    sessions = {}
+    for day, s in zip(df['date'], found):
+        sessions.setdefault(day, []).append(s)
+    stats = df.groupby('date').agg({'exercise_duration': 'sum', 'exercise_calories': 'sum',
+                                    'exercise_count': 'sum', 'exercise_aef': 'mean'})
+    stats['_sessions'] = pd.Series([sessions[d] for d in stats.index], index=stats.index, dtype=object)
     return stats
 
 
 def parser_for(source: Source):
-    """The function path -> DataFrame | None that reads one file of `source`.
-
-    For a Special source it is the function itself (a module-level function,
-    so a process pool can pickle it); for the others a partial of the reader.
-    """
+    """The function path -> DataFrame | None that reads one file of `source`: for a Special
+    source the function itself (a module-level one, so a process pool can pickle it)."""
     reader = source.reader
     if isinstance(reader, Special):
         return reader.parse
@@ -400,6 +306,4 @@ def parse(source: Source, file_path):
 
 def drop_helpers(df):
     """The frame without the helper columns (names starting with "_")."""
-    if df is None:
-        return None
-    return df.drop(columns=[c for c in df.columns if str(c).startswith("_")])
+    return None if df is None else df.drop(columns=[c for c in df.columns if str(c).startswith("_")])
