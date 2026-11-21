@@ -22,6 +22,7 @@ import { DataErrorState } from "./components/dashboard/DataErrorState";
 import { Header } from "./components/dashboard/Header";
 import { LandingPage } from "./components/onboarding/LandingPage";
 import { StartupScreen } from "./components/dashboard/StartupScreen";
+import { NoticeRegion } from "./components/ui/notice";
 
 /** Where the start sequence is: waiting for the server, failed, first run, or the dashboard. */
 type Startup = "starting" | "unreachable" | "first-run" | "ready";
@@ -177,7 +178,12 @@ function App() {
     );
   };
 
-  return renderContent();
+  return (
+    <>
+      {renderContent()}
+      <NoticeRegion />
+    </>
+  );
 }
 
 export default App;
