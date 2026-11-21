@@ -129,6 +129,15 @@ def test_a_file_without_a_required_column_is_reported_as_a_warning(tmp_path, nam
     assert warnings == [{"file": name, "reason": reason}]
 
 
+def test_exercise_efficiency_is_empty_when_no_session_has_a_heart_rate(tmp_path):
+    f = tmp_path / "exercise-0.json"
+    f.write_text(json.dumps([{"logId": 1, "startTime": "03/20/24 07:00:00",
+                              "duration": 600000, "calories": 100}]))
+    df = parsers.parse(S["exercise"], str(f))
+    assert df["exercise_aef"].isna().tolist() == [True]
+    assert df["exercise_count"].tolist() == [1]
+
+
 def test_stress_rows_without_data_are_dropped(tmp_path):
     f = tmp_path / "Stress Score.csv"
     f.write_text("DATE,STRESS_SCORE,STATUS\n2024-03-01T00:00:00,50,NO_DATA\n2024-03-02T00:00:00,60,READY\n")

@@ -321,11 +321,12 @@ def parse_exercise_json(file_path):
     Returns a DataFrame indexed by 'date' with 'exercise_duration' (minutes),
     'exercise_calories', 'exercise_count' and 'exercise_aef' (mean of
     calories / average heart rate over the day's sessions that have a heart
-    rate), plus a helper column '_sessions': for each day, the list of
-    ExerciseSession (logId, minutes, calories, 1, efficiency or None) of its
-    sessions in this file. Consecutive export files can both contain the same
-    session; the ETL uses the logId to count it once when it combines a day
-    found in two files, and drops every column that starts with an underscore.
+    rate; empty when none has), plus a helper column '_sessions': for each
+    day, the list of ExerciseSession (logId, minutes, calories, 1, efficiency
+    or None) of its sessions in this file. Consecutive export files can both
+    contain the same session; the ETL uses the logId to count it once when it
+    combines a day found in two files, and drops every column that starts
+    with an underscore.
     """
     data = _read_json(file_path)
     if not data:
@@ -365,18 +366,15 @@ def parse_exercise_json(file_path):
         sessions.setdefault(day, []).append(session)
     df = df.drop(columns='_session')
 
-    aggs = {
+    if 'exercise_aef' not in df.columns:
+        df['exercise_aef'] = float('nan')     # no session has a heart rate: empty, not 0
+
+    stats = df.groupby('date').agg({
         'exercise_duration': 'sum',
         'exercise_calories': 'sum',
-        'exercise_count': 'sum'
-    }
-    if 'exercise_aef' in df.columns:
-        aggs['exercise_aef'] = 'mean'
-    else:
-        df['exercise_aef'] = 0.0
-        aggs['exercise_aef'] = 'mean'
-
-    stats = df.groupby('date').agg(aggs)
+        'exercise_count': 'sum',
+        'exercise_aef': 'mean',
+    })
     stats['_sessions'] = pd.Series(
         [sessions[d] for d in stats.index], index=stats.index, dtype=object)
     return stats

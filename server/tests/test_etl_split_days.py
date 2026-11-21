@@ -281,7 +281,7 @@ def test_merged_split_day_equals_the_same_samples_in_one_file(tmp_path):
     assert not [c for c in split.columns if str(c).startswith("_")]
 
 
-def test_exercise_aef_without_any_heart_rate_keeps_the_single_file_value(tmp_path):
+def test_exercise_aef_without_any_heart_rate_stays_empty(tmp_path):
     folder = tmp_path / GLOBAL
     folder.mkdir()
     write_json(folder, "exercise-0.json", [session("03/20/24 07:00:00", 10, 100)])
@@ -289,4 +289,4 @@ def test_exercise_aef_without_any_heart_rate_keeps_the_single_file_value(tmp_pat
     df = etl.load_collection(tmp_path, GLOBAL, "exercise-*.json", parser("exercise"),
                              combine=S["exercise"].rules)
     assert df["exercise_count"].tolist() == [2]
-    assert df["exercise_aef"].tolist() == [0.0]
+    assert df["exercise_aef"].isna().tolist() == [True]
