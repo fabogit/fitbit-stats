@@ -2,7 +2,10 @@ import pandas as pd
 import os
 import json
 
+import applog
 import config
+
+logger = applog.get_logger("briefing")
 
 # ==========================================
 # CONFIGURATION
@@ -69,7 +72,7 @@ def load_metrics(target_date=None):
                 metrics["height"] = sc.get("height", "N/A")
         except (OSError, ValueError, AttributeError) as e:
             # Unreadable or malformed profile file: the brief is still useful without it.
-            print(f"Could not read session_config.json ({type(e).__name__}); profile left blank.")
+            logger.warning("Could not read session_config.json (%s); profile left blank.", type(e).__name__)
     return metrics
 
 def get_daily_brief(target_date_str=None):

@@ -83,6 +83,66 @@ fn parse_ready(line: &str) -> Option<u16> {
   serde_json::from_str::<Handshake>(json).ok().map(|h| h.port).filter(|p| *p != 0)
 }
 
+/// A line of the sidecar is cut to this many characters before it is logged.
+const MAX_LINE_CHARS: usize = 2000;
+
+/// The level of a line of the server's output, and the line without its level prefix.
+///
+/// uvicorn's format starts a line with the level (`INFO:     text`). A line without
+/// one (a traceback, the output of the interpreter) takes the level of the line
+/// before it on the same stream, or `default` when there is none.
+fn classify(line: &str, previous: Option<log::Level>, default: log::Level) -> (log::Level, &str) {
+  for (prefix, level) in [
+    ("DEBUG:", log::Level::Debug),
+    ("INFO:", log::Level::Info),
+    ("WARNING:", log::Level::Warn),
+    ("ERROR:", log::Level::Error),
+    ("CRITICAL:", log::Level::Error),
+  ] {
+    if let Some(rest) = line.strip_prefix(prefix) {
+      return (level, rest.trim_start());
+    }
+  }
+  (previous.unwrap_or(default), line)
+}
+
+/// `text` with the home folder of the user replaced by `~`, and cut to a sane length.
+/// The server already hides the folders it knows about; this is the second line of defence.
+fn tidy(text: &str, home: Option<&str>) -> String {
+  let mut text = text.trim_end().to_string();
+  if let Some(home) = home.filter(|h| h.trim_end_matches(['/', '\\']).len() > 1) {
+    let home = home.trim_end_matches(['/', '\\']);
+    text = text.replace(home, "~");
+    if home.contains('\\') {
+      text = text.replace(&home.replace('\\', "/"), "~");
+    }
+  }
+  if text.chars().count() > MAX_LINE_CHARS {
+    text = text.chars().take(MAX_LINE_CHARS).collect::<String>() + "…";
+  }
+  text
+}
+
+/// Where the lines of one stream of the sidecar go, with the level of the last one.
+struct Forwarder {
+  default: log::Level,
+  last: Option<log::Level>,
+  home: Option<String>,
+}
+
+impl Forwarder {
+  fn new(default: log::Level, home: Option<String>) -> Self {
+    Self { default, last: None, home }
+  }
+
+  fn forward(&mut self, bytes: &[u8]) {
+    let line = String::from_utf8_lossy(bytes);
+    let (level, text) = classify(line.trim_end(), self.last, self.default);
+    self.last = Some(level);
+    log::log!(target: "sidecar", level, "{}", tidy(text, self.home.as_deref()));
+  }
+}
+
 struct Inner {
   generation: u64,
   child: Option<CommandChild>,
@@ -199,24 +259,22 @@ fn spawn_generation(app: &AppHandle, generation: u64) {
 /// stop reading: the channel holds one message, and a sidecar whose output is
 /// not taken blocks on its next `print`.
 async fn watch_events(app: AppHandle, generation: u64, mut rx: tauri::async_runtime::Receiver<CommandEvent>) {
+  let home = app.path().home_dir().ok().map(|p| p.to_string_lossy().into_owned());
+  let mut stdout = Forwarder::new(log::Level::Info, home.clone());
+  let mut stderr = Forwarder::new(log::Level::Warn, home);
   let mut ready = false;
   while let Some(event) = rx.recv().await {
     let supervisor = app.state::<Supervisor>();
     match event {
-      CommandEvent::Stdout(bytes) => {
-        let line = String::from_utf8_lossy(&bytes);
-        match parse_ready(&line) {
-          Some(port) if !ready => {
-            ready = true;
-            log::info!(target: "sidecar", "sidecar ready on port {port}");
-            supervisor.publish(&app, ServerInfo::ready(generation, port));
-          }
-          _ => log::info!(target: "sidecar", "{}", line.trim_end()),
+      CommandEvent::Stdout(bytes) => match parse_ready(&String::from_utf8_lossy(&bytes)) {
+        Some(port) if !ready => {
+          ready = true;
+          log::info!(target: "sidecar", "sidecar ready on port {port}");
+          supervisor.publish(&app, ServerInfo::ready(generation, port));
         }
-      }
-      CommandEvent::Stderr(bytes) => {
-        log::warn!(target: "sidecar", "{}", String::from_utf8_lossy(&bytes).trim_end());
-      }
+        _ => stdout.forward(&bytes),
+      },
+      CommandEvent::Stderr(bytes) => stderr.forward(&bytes),
       CommandEvent::Error(message) => log::error!(target: "sidecar", "{message}"),
       CommandEvent::Terminated(payload) => {
         log::warn!(target: "sidecar", "sidecar exited (code {:?}, signal {:?})", payload.code, payload.signal);
@@ -294,5 +352,48 @@ mod tests {
     assert_eq!(parse_ready(r#"FITSTATS_READY {"port":0,"pid":1}"#), None);
     assert_eq!(parse_ready(r#"FITSTATS_READY {"port":70000,"pid":1}"#), None);
     assert_eq!(parse_ready(r#" FITSTATS_READY {"port":8000}"#), None);
+  }
+
+  #[test]
+  fn uvicorn_prefix_sets_the_level_and_is_removed() {
+    use log::Level::*;
+    assert_eq!(classify("INFO:     Started server process [12]", None, Warn), (Info, "Started server process [12]"));
+    assert_eq!(classify("WARNING:  Could not save", Some(Info), Info), (Warn, "Could not save"));
+    assert_eq!(classify("ERROR:    ETL run failed", None, Info), (Error, "ETL run failed"));
+    assert_eq!(classify("CRITICAL: out of memory", None, Info), (Error, "out of memory"));
+    assert_eq!(classify("DEBUG:    Skipped a.json", None, Info), (Debug, "Skipped a.json"));
+  }
+
+  #[test]
+  fn a_line_without_a_prefix_follows_the_line_before_it() {
+    use log::Level::*;
+    assert_eq!(classify("Traceback (most recent call last):", Some(Error), Info), (Error, "Traceback (most recent call last):"));
+    assert_eq!(classify("plain output", None, Info), (Info, "plain output"));
+    assert_eq!(classify("plain error", None, Warn), (Warn, "plain error"));
+    // A prefix is only a prefix at the start of the line.
+    assert_eq!(classify("see INFO: here", None, Warn), (Warn, "see INFO: here"));
+  }
+
+  #[test]
+  fn home_folder_is_replaced_by_a_tilde() {
+    assert_eq!(tidy("open /home/someone/x/a.json", Some("/home/someone")), "open ~/x/a.json");
+    assert_eq!(tidy("open /home/someone/x/a.json", Some("/home/someone/")), "open ~/x/a.json");
+    assert_eq!(tidy(r"open C:\Users\someone\a.json", Some(r"C:\Users\someone")), r"open ~\a.json");
+    assert_eq!(tidy("open C:/Users/someone/a.json", Some(r"C:\Users\someone")), "open ~/a.json");
+  }
+
+  #[test]
+  fn a_home_that_is_the_root_is_left_alone() {
+    assert_eq!(tidy("open /usr/lib/a", Some("/")), "open /usr/lib/a");
+    assert_eq!(tidy("open /usr/lib/a", Some("")), "open /usr/lib/a");
+    assert_eq!(tidy("open /usr/lib/a", None), "open /usr/lib/a");
+  }
+
+  #[test]
+  fn a_long_line_is_cut() {
+    let line = "x".repeat(5000);
+    let out = tidy(&line, None);
+    assert_eq!(out.chars().count(), MAX_LINE_CHARS + 1);
+    assert!(out.ends_with('…'));
   }
 }

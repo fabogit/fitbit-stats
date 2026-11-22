@@ -2,6 +2,30 @@ mod sidecar;
 
 use sidecar::{ApiToken, Supervisor};
 use tauri::{Manager, RunEvent};
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
+
+/// Name of the log file (`FitStats.log`) in the log folder of the application.
+const LOG_FILE: &str = "FitStats";
+/// A log file is closed at this size; three files are kept, about 3 MB at most.
+const LOG_FILE_MAX_BYTES: u128 = 1_000_000;
+const LOG_FILES_KEPT: usize = 3;
+
+/// The log of the application, in release builds too: it is where the output of
+/// the server goes, and the only trace a user can send when the server fails.
+fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+  let mut targets = vec![Target::new(TargetKind::LogDir { file_name: Some(LOG_FILE.into()) })];
+  if cfg!(debug_assertions) {
+    targets.push(Target::new(TargetKind::Stdout));
+  }
+  tauri_plugin_log::Builder::new()
+    .targets(targets)
+    .level(log::LevelFilter::Info)
+    .max_file_size(LOG_FILE_MAX_BYTES)
+    // KeepOne (the default) deletes the file when it is full: the log would be lost
+    // just when it is needed.
+    .rotation_strategy(RotationStrategy::KeepSome(LOG_FILES_KEPT))
+    .build()
+}
 
 /// 256 random bits from the OS generator, hex encoded.
 fn generate_token() -> String {
@@ -14,17 +38,11 @@ fn generate_token() -> String {
 pub fn run() {
   tauri::Builder::default()
     .invoke_handler(tauri::generate_handler![sidecar::get_api_token, sidecar::server_endpoint])
+    // First, so that everything after it can be logged.
+    .plugin(log_plugin())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_shell::init())
     .setup(|app| {
-      if cfg!(debug_assertions) {
-        app.handle().plugin(
-          tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Info)
-            .build(),
-        )?;
-      }
-
       app.manage(ApiToken(generate_token()));
       app.manage(Supervisor::new());
       sidecar::start(app.handle());

@@ -10,8 +10,11 @@ from typing import Callable
 
 import pandas as pd
 
+import applog
 from modules import etl, metrics
 from modules.run_config import EtlConfig
+
+logger = applog.get_logger("pipeline")
 
 ProgressFn = Callable[[int, str], None]
 
@@ -121,8 +124,7 @@ def run_pipeline(cfg: EtlConfig, progress: ProgressFn | None = None,
     finally:
         for tmp in tmps:
             tmp.unlink(missing_ok=True)
-    print(f"-> Analysis CSV exported to: {finals[0]}")
-    print(f"-> Dashboard JSON exported to: {finals[1]}")
+    logger.info("Outputs written (%s, %s)", finals[0].name, finals[1].name)
 
     report(100, "Complete")
     return PipelineResult(df=df, warnings=warnings)

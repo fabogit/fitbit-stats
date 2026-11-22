@@ -1,7 +1,6 @@
 import errno
 import hmac
 import ipaddress
-import logging
 import multiprocessing
 import os
 import json
@@ -20,6 +19,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
+import applog
 import config
 from jobs import LAST_RUN_FILE, JobBusy, JobManager, JobSnapshot
 from modules.briefing import get_daily_brief
@@ -46,7 +46,8 @@ APP_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-logger = logging.getLogger("uvicorn.error")
+applog.configure_logging()
+logger = applog.get_logger("api")
 
 
 def build_allowed_origins(extra: str = "") -> List[str]:
@@ -215,7 +216,6 @@ async def check_path(path: str):
     target_path = path
     if not os.path.isabs(path):
         target_path = os.path.abspath(path)
-        print(f"Resolving relative path '{path}' to '{target_path}'")
 
     if not os.path.exists(target_path):
         return {"valid": False, "reason": f"Path '{target_path}' does not exist"}
@@ -406,7 +406,7 @@ async def clear_data():
                     os.remove(filepath)
                     cleared.append(filepath)
             except Exception as e:
-                print(f"Error removing {filepath}: {e}")
+                logger.warning("Could not remove %s (%s)", os.path.basename(filepath), type(e).__name__)
 
     try:
         job_manager.reset(erase)
@@ -507,7 +507,12 @@ class _Server(uvicorn.Server):
 def main(environ=None) -> None:
     """Runs the API until it is stopped."""
     sock = bind_socket(listen_port(environ))
-    _Server(uvicorn.Config(app)).run(sockets=[sock])
+    # No access log: every request line would carry its query string, which
+    # can hold a folder of the user (the path check), and the page asks for
+    # the health check twice a second while it waits.
+    server_config = uvicorn.Config(app, access_log=False)
+    applog.scrub_uvicorn_logs()
+    _Server(server_config).run(sockets=[sock])
 
 
 if __name__ == "__main__":

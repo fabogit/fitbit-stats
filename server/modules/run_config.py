@@ -11,6 +11,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
+import applog
+
+logger = applog.get_logger("run_config")
+
 # Biometric limits. Keep identical to client/src/lib/biometrics.ts (all bounds inclusive).
 HEIGHT_CM_MIN = 50
 HEIGHT_CM_MAX = 250
@@ -118,6 +122,6 @@ def read_session_config(output_dir: Path) -> dict:
         with open(path, "r") as f:
             data = json.load(f)
     except (OSError, ValueError) as e:
-        print(f"Could not read {SESSION_CONFIG_FILE} ({type(e).__name__}); ignoring it.")
+        logger.warning("Could not read %s (%s); ignoring it.", SESSION_CONFIG_FILE, type(e).__name__)
         return {}
     return data if isinstance(data, dict) else {}

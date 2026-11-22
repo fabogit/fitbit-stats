@@ -6,7 +6,6 @@ or error. The status of the last run is saved to ``last_run.json`` in the
 output folder when a run starts and when it ends, so it survives a restart.
 """
 import json
-import logging
 import os
 import secrets
 import threading
@@ -16,11 +15,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Literal
 
+import applog
 from modules.etl import describe_error
 from modules.pipeline import NoDataError, PipelineResult, ProgressFn
 from modules.run_config import EtlConfig
 
-logger = logging.getLogger("uvicorn.error")
+logger = applog.get_logger("jobs")
 
 JobState = Literal["idle", "running", "finished", "error"]
 
@@ -160,6 +160,8 @@ class JobManager:
         with self._lock:
             if self._current.state == "running":
                 raise JobBusy(self._current)
+            # From here on the log never names the folders of this run.
+            applog.hide_folders(cfg.data_dir, cfg.output_dir)
             if prepare is not None:
                 prepare()
             run_id = uuid.uuid4().hex
