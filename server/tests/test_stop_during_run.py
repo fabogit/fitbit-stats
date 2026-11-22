@@ -86,6 +86,32 @@ api.end_process_tree(True)
         proc.stdout.close()
 
 
+def test_the_forced_exit_run_by_a_timer_ends_the_process_and_its_group():
+    """The forced exit runs in a threading.Timer, not in the main thread (where a signal
+    handler cannot be changed): the process must still go, with every process of its group."""
+    script = """
+import subprocess, threading, time, api
+api.lead_process_group()
+kids = [subprocess.Popen(["sleep", "60"]) for _ in range(3)]
+print(*[k.pid for k in kids], flush=True)
+threading.Timer(0.2, api._force_exit, args=(True,)).start()
+time.sleep(60)   # a server that did not stop; the timer must end it
+"""
+    proc = run_script(script)
+    kids = []
+    try:
+        kids = [int(p) for p in proc.stdout.readline().split()]
+        assert wait_until_gone(kids, 10) == []
+        assert proc.wait(10) in (0, -9)
+    finally:
+        for pid in kids:
+            if alive(pid):
+                os.kill(pid, 9)
+        proc.kill()
+        proc.wait()
+        proc.stdout.close()
+
+
 def test_a_pool_worker_ends_when_the_server_that_started_it_is_killed():
     script = """
 import os, signal, time

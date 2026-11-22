@@ -539,21 +539,30 @@ def end_process_tree(own_group: bool) -> None:
     Workers are children of the server: left alone they go on parsing their file
     when it stops, and one that is just being started would be missed by any list
     of them. With a process group of our own (`lead_process_group`) the whole group
-    is told to end in one go, workers started a moment ago included; this process
-    ignores the signal, since it is on its way out anyway. Without a group the
+    is ended in one go, workers started a moment ago included. Without a group the
     workers known to multiprocessing are terminated.
+
+    The group signal reaches this process too. From the main thread (the server
+    stopped by itself) SIGTERM is ignored first, so the process leaves normally.
+    From any other thread (the forced exit, run by a timer) the handler cannot be
+    changed, and a SIGTERM aimed at the group would race with the exit that
+    follows: SIGKILL ends the group and this process at one instant, which is what
+    a forced exit is for. The exit status of that process is then "killed".
     """
     if own_group:
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        os.killpg(os.getpgrp(), signal.SIGTERM)
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            os.killpg(os.getpgrp(), signal.SIGTERM)
+        else:
+            os.killpg(os.getpgrp(), signal.SIGKILL)
         return
     for child in multiprocessing.active_children():
         child.terminate()
 
 
 def _force_exit(own_group: bool = False) -> None:
-    end_process_tree(own_group)
     logging.shutdown()
+    end_process_tree(own_group)
     os._exit(0)
 
 
