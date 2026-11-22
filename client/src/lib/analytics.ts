@@ -47,15 +47,6 @@ export const getValidSeries = (
   }
 };
 
-export const calculateAverage = (data: HealthRecord[], key: keyof HealthRecord): string => 
-  calculateStats(getValidSeries(data, key)).avg;
-
-export const calculateMin = (data: HealthRecord[], key: keyof HealthRecord): string => 
-  calculateStats(getValidSeries(data, key)).min;
-
-export const calculateMax = (data: HealthRecord[], key: keyof HealthRecord): string => 
-  calculateStats(getValidSeries(data, key)).max;
-
 /**
  * Synthetic Series: Recovery Score (calculated daily)
  */
@@ -96,20 +87,4 @@ export const getReadinessSeries = (data: HealthRecord[]): number[] => {
   return data
     .map(record => record.readiness_raw)
     .filter((v): v is number => v !== null);
-};
-
-export const getLastValidMetric = (data: HealthRecord[], key: keyof HealthRecord) => {
-  for (let i = data.length - 1; i >= 0; i--) {
-    const val = data[i][key];
-    if (val !== null && val !== undefined) {
-      const seriesCheck = getValidSeries([data[i]], key);
-      if (seriesCheck.length > 0) return val;
-    }
-  }
-  return null;
-};
-
-export const calculateRecoveryScore = (data: HealthRecord[]): number | null => {
-  const series = getRecoveryScoreSeries(data);
-  return series.length > 0 ? series[series.length - 1] : null;
 };

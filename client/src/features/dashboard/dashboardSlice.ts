@@ -75,13 +75,6 @@ const dashboardSlice = createSlice({
     setDateRange(state, action: PayloadAction<DateRange>) {
       state.dateRange = action.payload;
     },
-    resetFilter(state) {
-      if (state.data.length > 0) {
-        const start = state.data[0].date;
-        const end = state.data[state.data.length - 1].date;
-        state.dateRange = { start, end };
-      }
-    },
   },
   extraReducers: (builder) => {
     builder
@@ -120,7 +113,7 @@ const dashboardSlice = createSlice({
   },
 });
 
-export const { setDateRange, resetFilter } = dashboardSlice.actions;
+export const { setDateRange } = dashboardSlice.actions;
 
 type DashboardRoot = { dashboard: DashboardState };
 
