@@ -202,21 +202,36 @@ jobs:
         timeout-minutes: 5
         run: python "$RUNNER_TEMP/smoke_sidecar.py" server/dist
 
-      - name: Verify sidecar signatures (macOS only)
+      - name: Write macOS signature check script
         if: matrix.os == 'macos-latest'
         shell: bash
         run: |
-          # PyInstaller signs every binary it collects (ad hoc). Fail if any Mach-O file is unsigned or invalid.
+          cat > "$RUNNER_TEMP/verify_signatures.sh" <<'SH'
+          # usage: verify_signatures.sh FOLDER
+          # PyInstaller signs every binary it collects (ad hoc). Fail if one is unsigned or invalid.
+          # A framework is signed as a whole bundle, so it is verified as a folder; any other
+          # Mach-O file is verified on its own.
           fail=0
           count=0
+          while IFS= read -r -d '' framework; do
+            count=$((count + 1))
+            codesign --verify --strict "$framework" || { echo "::error::bad signature: $framework"; fail=1; }
+          done < <(find "$1" -type d -name '*.framework' -prune -print0)
           while IFS= read -r -d '' f; do
+            case "$f" in *.framework/*) continue ;; esac
             if file -b "$f" | grep -q 'Mach-O'; then
               count=$((count + 1))
               codesign --verify --strict "$f" || { echo "::error::bad signature: $f"; fail=1; }
             fi
-          done < <(find server/dist/fitstats-server -type f -print0)
-          echo "verified $count Mach-O files"
+          done < <(find "$1" -type f -print0)
+          echo "verified $count signed items"
           [ "$count" -gt 0 ] && [ "$fail" -eq 0 ]
+          SH
+
+      - name: Verify sidecar signatures (macOS only)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: bash "$RUNNER_TEMP/verify_signatures.sh" server/dist/fitstats-server
 
       - name: Copy Sidecar to Tauri resources
         shell: bash
@@ -283,16 +298,7 @@ jobs:
           app=client/src-tauri/target/release/bundle/macos/FitStats.app
           res="$app/Contents/Resources/fitstats-server"
           ls "$res"
-          fail=0
-          count=0
-          while IFS= read -r -d '' f; do
-            if file -b "$f" | grep -q 'Mach-O'; then
-              count=$((count + 1))
-              codesign --verify --strict "$f" || { echo "::error::bad signature in the bundle: $f"; fail=1; }
-            fi
-          done < <(find "$res" -type f -print0)
-          echo "verified $count Mach-O files in the bundle"
-          [ "$count" -gt 0 ] && [ "$fail" -eq 0 ]
+          bash "$RUNNER_TEMP/verify_signatures.sh" "$res"
           python "$RUNNER_TEMP/smoke_sidecar.py" "$res" --reference server/dist/fitstats-server
 
       - name: Smoke test the Windows installers
