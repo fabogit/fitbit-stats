@@ -54,17 +54,17 @@ function App() {
   const startFailed = serverState === "failed" && (startup === "starting" || startup === "unreachable");
   const logPath = useLogLocation(startFailed);
 
-  // A server that was restarted after the start gave up: start again.
-  const startupRef = useRef(startup);
-  useEffect(() => {
-    startupRef.current = startup;
-  }, [startup]);
+  // A server that is ready while the start has given up on it (it was restarted by hand, or
+  // became ready in the last moment): start again, once for each ready server, so a server
+  // that is ready but whose answers fail does not make the start loop.
   const readyGeneration = serverState === "ready" ? server?.info?.generation : undefined;
+  const retriedFor = useRef<number | undefined>(undefined);
   useEffect(() => {
-    if (readyGeneration !== undefined && startupRef.current === "unreachable") {
+    if (readyGeneration !== undefined && startup === "unreachable" && retriedFor.current !== readyGeneration) {
+      retriedFor.current = readyGeneration;
       setStartAttempt((n) => n + 1);
     }
-  }, [readyGeneration]);
+  }, [readyGeneration, startup]);
 
   // Start sequence, the same on desktop and web: wait for the server, read the
   // job status, read the configuration, then load the data. The first-run page

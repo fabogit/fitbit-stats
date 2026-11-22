@@ -71,7 +71,7 @@ The app keeps a log of what the server says in `FitStats.log`, in the log folder
 | macOS | `~/Library/Logs/com.fitstats` |
 | Linux | `~/.local/share/com.fitstats/logs` (under `$XDG_DATA_HOME` if it is set) |
 
-A log file is closed at 1 MB and renamed with its date; the current one and the three newest older ones are kept (4 MB at most). The server replaces your home folder and the folders of your export with placeholders in what it writes, but look through the file before you share it. The app's data lives next to it: in the same folder on Linux (`com.fitstats`), under `%APPDATA%\com.fitstats` on Windows and `~/Library/Application Support/com.fitstats` on macOS. On Linux with `XDG_DATA_HOME` set to a folder other than `~/.local/share`, versions before this one kept the data in `~/.local/share/com.fitstats`: the app now follows `XDG_DATA_HOME` and shows the start page once, then calculates again from your export.
+A log file is closed at 1 MB and renamed with its date; a few older files are kept (about 4 MB at most) and the oldest are deleted. The server replaces your home folder and the folders of your export with placeholders in what it writes, but look through the file before you share it. The app's data lives next to it: in the same folder on Linux (`com.fitstats`), under `%APPDATA%\com.fitstats` on Windows and `~/Library/Application Support/com.fitstats` on macOS. On Linux with `XDG_DATA_HOME` set to a folder other than `~/.local/share`, versions before this one kept the data in `~/.local/share/com.fitstats`: the app now follows `XDG_DATA_HOME` and shows the start page once, then calculates again from your export.
 
 ---
 

@@ -104,8 +104,8 @@ export async function openStatusSocket(): Promise<WebSocket> {
  *
  * A cold sidecar needs a few seconds to unpack and start, so the first
  * requests would otherwise fail. Polls every `intervalMs` until `timeoutMs`
- * has elapsed; resolves `true` once the server is up and `false` on timeout
- * or abort.
+ * has elapsed (then once more); resolves `true` once the server is up and
+ * `false` on timeout or abort.
  */
 export async function waitForServer(
   signal?: AbortSignal,
@@ -128,5 +128,11 @@ export async function waitForServer(
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }
-  return false;
+  if (signal?.aborted) return false;
+  // One last try: the server may have become ready in the half second the loop was asleep.
+  try {
+    return (await apiFetch("/api/health")).ok;
+  } catch {
+    return false;
+  }
 }
