@@ -9,7 +9,7 @@ A comprehensive, **cross-platform Desktop Application** designed to locally anal
 ### 🏗 Native Desktop Architecture
 
 - **Tauri v2 Wrapper:** Provides a lightweight native OS window with full filesystem sandboxing capabilities and native directory pickers.
-- **Python Sidecar (Engine):** A standalone executable compiled with PyInstaller. It heavily utilizes Pandas for ETL and metabolic math without requiring the user to have Python installed.
+- **Python Sidecar (Engine):** A standalone program compiled with PyInstaller (one folder, shipped with the app). It heavily utilizes Pandas for ETL and metabolic math without requiring the user to have Python installed.
 - **Privacy-First (100% Offline):** Your health data never leaves your computer. The Python engine computes the metrics and safely writes them to your highly-isolated local `AppData` directory (`$APPDATA/com.fitstats`). React reads it from there seamlessly.
 
 ### 📊 Analytics & Metrics
@@ -128,7 +128,7 @@ If you wish to modify the code, you will need to run the hybrid stack locally.
 
 ### 1. Compile the Python Sidecar
 
-Tauri needs the Python API server (`fitstats-server`) compiled as a binary in its `bin/` folder before launching. Without it, `pnpm tauri dev` fails.
+Tauri needs the Python API server (`fitstats-server`) built as a folder in `client/src-tauri/sidecar/` before launching or building. Without it, `pnpm tauri dev` and `pnpm tauri build` fail.
 
 ```bash
 cd server
@@ -137,27 +137,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install pyinstaller
 
-# Compile the standalone executable (output: dist/fitstats-server)
+# Build the one-directory bundle (output: dist/fitstats-server/, with the
+# executable and an _internal/ folder next to it)
 pyinstaller --clean fitstats-server.spec
+
+# Copy the whole folder, not only the executable
+mkdir -p ../client/src-tauri/sidecar
+cp -R dist/fitstats-server ../client/src-tauri/sidecar/
 ```
 
-#### Sidecar Naming Convention
-
-Tauri requires sidecars to have a specific suffix based on the **target triple**. You can find your triple by running `rustc -Vv | grep host`.
-
-Common names:
-
-- **Mac (Apple Silicon):** `fitstats-server-aarch64-apple-darwin`
-- **Linux:** `fitstats-server-x86_64-unknown-linux-gnu`
-- **Windows:** `fitstats-server-x86_64-pc-windows-msvc.exe`
-
-Release installers are built only for these three targets. On an Intel Mac you can still run from source: use the `x86_64-apple-darwin` suffix for the binary name.
-
-```bash
-# Example for Linux (replace the suffix with your own target triple):
-mkdir -p ../client/src-tauri/bin
-cp dist/fitstats-server ../client/src-tauri/bin/fitstats-server-x86_64-unknown-linux-gnu
-```
+The folder is declared in `client/src-tauri/tauri.conf.json` as a bundle resource, so the installers ship it next to the application (the same layout on every system, with no target-triple suffix). The server does not unpack itself into a temporary folder at launch, so it starts faster than the single-file build it replaces. On Windows, copy the `dist\fitstats-server` folder into `client\src-tauri\sidecar\` with Explorer or PowerShell (`Copy-Item -Recurse`) instead of using `cp`.
 
 ### 2. Run the Tauri App
 
@@ -193,9 +182,9 @@ ruff check .
 python -m pytest
 
 # Desktop: Rust type check (needs the Linux WebKitGTK packages listed above).
-# Tauri's build script requires the sidecar file to exist; an empty placeholder is enough here.
+# Tauri's build script requires the sidecar resource to exist; an empty placeholder file is enough here.
 cd ../client/src-tauri
-mkdir -p bin && touch bin/fitstats-server-x86_64-unknown-linux-gnu   # use your own target triple
+mkdir -p sidecar/fitstats-server && touch sidecar/fitstats-server/fitstats-server
 cargo check --locked
 ```
 
@@ -208,7 +197,8 @@ This repository is equipped with a fully automated Release Pipeline designed to 
 - **Trigger:** The workflow is triggered automatically when a new Git tag starting with `v` is pushed to the repository (e.g., `git tag v3.1.0 && git push origin v3.1.0`).
 - **Matrix Strategy:** It spins up three parallel cloud instances (`ubuntu-latest`, `macos-latest`, `windows-latest`).
 - **Version Automation:** The CI/CD pipeline uses `client/package.json` as the single source of truth. The version defined there is automatically injected into the Tauri configuration and used to name all generated artifacts (e.g., `FitStats_3.1.0_aarch64.dmg`).
-- **Signing:** Includes automated ad-hoc signing for macOS binaries (Sidecars and App Bundle) to ensure compatibility with Apple Silicon security requirements.
+- **Signing:** Includes automated ad-hoc signing for macOS binaries (the bundled server and the App Bundle) to ensure compatibility with Apple Silicon security requirements. The workflow checks the signatures of the bundled server before building the installers.
+- **Smoke tests:** The server is started and queried right after it is built, and again from inside the installers on every system, before a release is published.
 
 ---
 

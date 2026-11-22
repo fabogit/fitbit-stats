@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{Manager, RunEvent};
+use tauri::{path::BaseDirectory, Manager, RunEvent};
 use tauri_plugin_shell::{process::CommandChild, ShellExt};
 
 /// Per-launch API token, shared with the sidecar and the frontend.
@@ -21,11 +21,17 @@ fn get_api_token(token: tauri::State<'_, ApiToken>) -> String {
 /// Handle of the Python sidecar, kept so it can be stopped on exit.
 struct Sidecar(Mutex<Option<CommandChild>>);
 
-/// Stop the sidecar together with the server process it launched.
+/// Location of the sidecar inside the bundled resources: the one-directory
+/// PyInstaller build, copied next to the application by the bundler.
+const SIDECAR_PATH: &str = if cfg!(windows) {
+  "fitstats-server/fitstats-server.exe"
+} else {
+  "fitstats-server/fitstats-server"
+};
+
+/// Stop the sidecar.
 ///
-/// The PyInstaller one-file binary is a bootloader that runs the real server
-/// as a child, so killing only the bootloader would leave the server (and
-/// port 8000) alive. A graceful stop lets the bootloader forward it.
+/// The sidecar is a single process, so a plain termination signal is enough.
 fn stop_sidecar(child: CommandChild) {
   let pid = child.pid().to_string();
   #[cfg(unix)]
@@ -44,7 +50,7 @@ fn stop_sidecar(child: CommandChild) {
   {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    // /T also ends the server process started by the bootloader.
+    // /T also ends the worker processes of the server's process pool.
     let _ = std::process::Command::new("taskkill")
       .args(["/PID", &pid, "/T", "/F"])
       .creation_flags(CREATE_NO_WINDOW)
@@ -70,10 +76,14 @@ pub fn run() {
       
       // Passed by environment, not argument: arguments show up in process lists.
       let token = generate_token();
+      // A resource, not an `externalBin`: the sidecar is a folder, not one file.
+      let sidecar_path = app
+        .path()
+        .resolve(SIDECAR_PATH, BaseDirectory::Resource)
+        .expect("failed to locate server sidecar");
       let sidecar = app
         .shell()
-        .sidecar("fitstats-server")
-        .expect("failed to construct server sidecar")
+        .command(sidecar_path)
         .env("FITSTATS_API_TOKEN", &token);
       app.manage(ApiToken(token));
       let (_rx, child) = sidecar.spawn().expect("failed to spawn server sidecar");

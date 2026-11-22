@@ -27,9 +27,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": [
-      "bin/fitstats-server"
-    ],
+    "resources": {
+      "sidecar/fitstats-server/": "fitstats-server/"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
