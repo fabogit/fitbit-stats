@@ -86,6 +86,9 @@ jobs:
           cat > "$RUNNER_TEMP/smoke_sidecar.py" <<'PY'
           """Start the server sidecar found under ROOT and wait for /api/health.
 
+          The sidecar picks a free port itself (FITSTATS_PORT=0) and says which on
+          the FITSTATS_READY line of its output, which is where this reads it.
+
           usage: smoke_sidecar.py ROOT [--reference DIR] [--allow-missing PATH ...]
 
           ROOT is a folder searched for fitstats-server/fitstats-server[.exe]
@@ -104,17 +107,29 @@ jobs:
           import time
           import urllib.request
 
-          URL = "http://127.0.0.1:8000/api/health"
+          READY = "FITSTATS_READY "
           NAME = "fitstats-server.exe" if os.name == "nt" else "fitstats-server"
           OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-          def healthy():
+          def healthy(port):
               try:
-                  with OPENER.open(URL, timeout=2) as r:
+                  with OPENER.open(f"http://127.0.0.1:{port}/api/health", timeout=2) as r:
                       return r.status == 200 and json.load(r) == {"status": "ok"}
               except Exception:
                   return False
+
+
+          def ready_port(log_path):
+              """The port of the FITSTATS_READY line in the sidecar output, if it has been printed."""
+              with open(log_path, errors="replace") as f:
+                  for line in f:
+                      if line.startswith(READY):
+                          try:
+                              return int(json.loads(line[len(READY):])["port"])
+                          except (ValueError, KeyError, TypeError):
+                              return None
+              return None
 
 
           def find_exe(root):
@@ -172,11 +187,9 @@ jobs:
                   print(f"files missing from the bundle: {len(missing)}")
                   if missing:
                       sys.exit("missing: " + ", ".join(missing[:20]))
-              if healthy():
-                  sys.exit("something already answers on port 8000; the test would prove nothing")
 
               log = tempfile.NamedTemporaryFile(prefix="sidecar-", suffix=".log", delete=False)
-              env = dict(os.environ, FITSTATS_API_TOKEN="0" * 64)
+              env = dict(os.environ, FITSTATS_API_TOKEN="0" * 64, FITSTATS_PORT="0")
               proc = subprocess.Popen([exe], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
               started = time.monotonic()
               ok = False
@@ -184,7 +197,8 @@ jobs:
                   while time.monotonic() - started < 60:
                       if proc.poll() is not None:
                           break
-                      if healthy():
+                      port = ready_port(log.name)
+                      if port is not None and healthy(port):
                           ok = True
                           break
                       time.sleep(0.2)
@@ -198,7 +212,7 @@ jobs:
                   print("--- sidecar output ---")
                   print(open(log.name, errors="replace").read())
                   sys.exit(f"no healthy response (exit code {proc.returncode})")
-              print(f"/api/health answered 200 after {elapsed:.1f} s")
+              print(f"port {port}: /api/health answered 200 after {elapsed:.1f} s")
 
 
           if __name__ == "__main__":

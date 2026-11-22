@@ -1,3 +1,4 @@
+import errno
 import hmac
 import ipaddress
 import logging
@@ -5,6 +6,8 @@ import multiprocessing
 import os
 import json
 import asyncio
+import socket
+import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import date
@@ -433,7 +436,81 @@ async def health():
     """Simple health check endpoint to verify API uptime."""
     return {"status": "ok"}
 
+# --- Process entry point ------------------------------------------------------
+#
+# The desktop shell (client/src-tauri/src/sidecar.rs) starts this file as a
+# frozen executable and talks to it through the environment, stdout and the
+# exit code. Change either side only together with the other:
+#
+#   FITSTATS_PORT  port to listen on on 127.0.0.1; 0 asks the system for a free
+#                  one. The default is 8000, which is what everything outside
+#                  the desktop shell (running the file by hand) expects.
+#   FITSTATS_READY one line on stdout, `FITSTATS_READY {"port":N,"pid":P}`,
+#                  printed once the socket accepts connections. It is the only
+#                  way the shell learns the port.
+#   exit code 3    the port is already in use.
+
+PORT_ENV = "FITSTATS_PORT"
+DEFAULT_PORT = 8000
+READY_PREFIX = "FITSTATS_READY"
+EXIT_PORT_IN_USE = 3
+ADDRESS_IN_USE_WINERROR = 10048  # WSAEADDRINUSE
+
+
+def listen_port(environ=None) -> int:
+    """The port to listen on, from FITSTATS_PORT (default 8000; 0 means any free port)."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get(PORT_ENV, "").strip()
+    if not raw:
+        return DEFAULT_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        port = -1
+    if not 0 <= port <= 65535:
+        raise SystemExit(f"{PORT_ENV} must be a port number between 0 and 65535")
+    return port
+
+
+def bind_socket(port: int) -> socket.socket:
+    """A socket bound to 127.0.0.1:`port`, not yet listening.
+
+    Exits with EXIT_PORT_IN_USE when the port is taken. The caller keeps the
+    socket from here to the server, so nobody can take the port in between.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if os.name != "nt":
+        # Like uvicorn: a port left in TIME_WAIT by the previous run is not "in use".
+        # Not on Windows, where this option would let a second process share the port.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", port))
+    except OSError as e:
+        sock.close()
+        if e.errno == errno.EADDRINUSE or getattr(e, "winerror", None) == ADDRESS_IN_USE_WINERROR:
+            print(f"Port {port} is already in use.", file=sys.stderr, flush=True)
+            raise SystemExit(EXIT_PORT_IN_USE) from None
+        raise
+    return sock
+
+
+class _Server(uvicorn.Server):
+    """A uvicorn server that announces its port once it is listening."""
+
+    async def startup(self, sockets=None) -> None:
+        await super().startup(sockets=sockets)
+        if self.started and sockets:
+            ready = {"port": sockets[0].getsockname()[1], "pid": os.getpid()}
+            print(f"{READY_PREFIX} {json.dumps(ready, separators=(',', ':'))}", flush=True)
+
+
+def main(environ=None) -> None:
+    """Runs the API until it is stopped."""
+    sock = bind_socket(listen_port(environ))
+    _Server(uvicorn.Config(app)).run(sockets=[sock])
+
+
 if __name__ == "__main__":
     # Needed so the ETL process pool works in the frozen (PyInstaller) sidecar.
     multiprocessing.freeze_support()
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    main()
