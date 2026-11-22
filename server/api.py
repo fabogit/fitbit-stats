@@ -449,6 +449,8 @@ async def health():
 #                  printed once the socket accepts connections. It is the only
 #                  way the shell learns the port.
 #   exit code 3    the port is already in use.
+#   CLIENT_PUBLIC_DIR the folder for the app's files (session, results, last run);
+#                  the shell passes its own data folder (see config.py).
 
 PORT_ENV = "FITSTATS_PORT"
 DEFAULT_PORT = 8000

@@ -8,7 +8,9 @@
 //!   `FITSTATS_READY {"port":N,"pid":P}`, on stdout: this is the only way the
 //!   port reaches the shell, and it comes from our own pipe, not from the
 //!   network, so another program answering on some port cannot be mistaken
-//!   for the server.
+//!   for the server;
+//! * the shell tells the server where to keep its files with `CLIENT_PUBLIC_DIR`
+//!   (its own data folder), so both always mean the same folder.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -228,13 +230,18 @@ fn spawn_generation(app: &AppHandle, generation: u64) {
       return;
     }
   };
+  let data_dir = app.path().app_data_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
   // Passed by environment, not argument: arguments show up in process lists.
   let command = app
     .shell()
     .command(path)
     .env("FITSTATS_API_TOKEN", &app.state::<ApiToken>().0)
     // A free port picked by the server itself, whatever the environment says.
-    .env("FITSTATS_PORT", "0");
+    .env("FITSTATS_PORT", "0")
+    // The folder this shell calls its data folder; the server keeps its files there.
+    // Always set, so a value inherited from the environment never counts (empty
+    // means "use your own default" to the server).
+    .env("CLIENT_PUBLIC_DIR", data_dir);
   let (rx, child) = match command.spawn() {
     Ok(spawned) => spawned,
     Err(e) => {
