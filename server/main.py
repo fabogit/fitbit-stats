@@ -3,6 +3,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import applog
 import config
 from modules.pipeline import NoDataError, run_pipeline
 from modules.run_config import EtlConfig, profile_from_mapping, read_session_config
@@ -61,6 +62,7 @@ def main():
     parser.add_argument("--end-date", type=date.fromisoformat, help="End date (YYYY-MM-DD)")
 
     args = parser.parse_args()
+    applog.configure_logging(plain=True)  # the messages of the ETL, as plain lines on stderr
 
     progress(5, "Loading configuration")
     try:

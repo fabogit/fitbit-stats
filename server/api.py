@@ -1,3 +1,4 @@
+import errno
 import hmac
 import ipaddress
 import logging
@@ -5,6 +6,10 @@ import multiprocessing
 import os
 import json
 import asyncio
+import signal
+import socket
+import sys
+import threading
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import date
@@ -17,6 +22,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
+import applog
 import config
 from jobs import LAST_RUN_FILE, JobBusy, JobManager, JobSnapshot
 from modules.briefing import get_daily_brief
@@ -43,7 +49,8 @@ APP_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-logger = logging.getLogger("uvicorn.error")
+applog.configure_logging()
+logger = applog.get_logger("api")
 
 
 def build_allowed_origins(extra: str = "") -> List[str]:
@@ -212,7 +219,6 @@ async def check_path(path: str):
     target_path = path
     if not os.path.isabs(path):
         target_path = os.path.abspath(path)
-        print(f"Resolving relative path '{path}' to '{target_path}'")
 
     if not os.path.exists(target_path):
         return {"valid": False, "reason": f"Path '{target_path}' does not exist"}
@@ -403,7 +409,7 @@ async def clear_data():
                     os.remove(filepath)
                     cleared.append(filepath)
             except Exception as e:
-                print(f"Error removing {filepath}: {e}")
+                logger.warning("Could not remove %s (%s)", os.path.basename(filepath), type(e).__name__)
 
     try:
         job_manager.reset(erase)
@@ -433,7 +439,182 @@ async def health():
     """Simple health check endpoint to verify API uptime."""
     return {"status": "ok"}
 
+# --- Process entry point ------------------------------------------------------
+#
+# The desktop shell (client/src-tauri/src/sidecar.rs) starts this file as a
+# frozen executable and talks to it through the environment, stdout and the
+# exit code. Change either side only together with the other:
+#
+#   FITSTATS_PORT  port to listen on on 127.0.0.1; 0 asks the system for a free
+#                  one. The default is 8000, which is what everything outside
+#                  the desktop shell (running the file by hand) expects.
+#   FITSTATS_READY one line on stdout, `FITSTATS_READY {"port":N,"pid":P}`,
+#                  printed once the socket accepts connections. It is the only
+#                  way the shell learns the port.
+#   exit code 3    the port is already in use.
+#   FITSTATS_EXIT_ON_STDIN_EOF=1  stop when stdin closes, or when a line `shutdown`
+#                  arrives on it. The shell holds the other end of the pipe, so the
+#                  server never outlives a shell that crashed or was killed. Only the
+#                  shell sets it: a server run by hand or in Docker ignores stdin.
+#   CLIENT_PUBLIC_DIR the folder for the app's files (session, results, last run);
+#                  the shell passes its own data folder (see config.py).
+
+PORT_ENV = "FITSTATS_PORT"
+DEFAULT_PORT = 8000
+READY_PREFIX = "FITSTATS_READY"
+EXIT_PORT_IN_USE = 3
+ADDRESS_IN_USE_WINERROR = 10048  # WSAEADDRINUSE
+
+
+def listen_port(environ=None) -> int:
+    """The port to listen on, from FITSTATS_PORT (default 8000; 0 means any free port)."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get(PORT_ENV, "").strip()
+    if not raw:
+        return DEFAULT_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        port = -1
+    if not 0 <= port <= 65535:
+        raise SystemExit(f"{PORT_ENV} must be a port number between 0 and 65535")
+    return port
+
+
+def bind_socket(port: int) -> socket.socket:
+    """A socket bound to 127.0.0.1:`port`, not yet listening.
+
+    Exits with EXIT_PORT_IN_USE when the port is taken. The caller keeps the
+    socket from here to the server, so nobody can take the port in between.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if os.name != "nt":
+        # Like uvicorn: a port left in TIME_WAIT by the previous run is not "in use".
+        # Not on Windows, where this option would let a second process share the port.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", port))
+    except OSError as e:
+        sock.close()
+        if e.errno == errno.EADDRINUSE or getattr(e, "winerror", None) == ADDRESS_IN_USE_WINERROR:
+            print(f"Port {port} is already in use.", file=sys.stderr, flush=True)
+            raise SystemExit(EXIT_PORT_IN_USE) from None
+        raise
+    return sock
+
+
+class _Server(uvicorn.Server):
+    """A uvicorn server that announces its port once it is listening."""
+
+    async def startup(self, sockets=None) -> None:
+        await super().startup(sockets=sockets)
+        if self.started and sockets:
+            ready = {"port": sockets[0].getsockname()[1], "pid": os.getpid()}
+            print(f"{READY_PREFIX} {json.dumps(ready, separators=(',', ':'))}", flush=True)
+
+
+STDIN_EOF_ENV = "FITSTATS_EXIT_ON_STDIN_EOF"
+SHUTDOWN_COMMAND = "shutdown"
+# After the request to stop, how long a server that is still running is given
+# before it ends itself (a request that never finishes must not keep it alive).
+FORCE_EXIT_SECONDS = 5
+
+
+def lead_process_group() -> bool:
+    """Makes this process the leader of a group of its own; True if it worked.
+
+    The worker processes of the ETL's pool belong to it, which lets `end_process_tree`
+    end them together with the server. Not available on Windows.
+    """
+    try:
+        os.setpgid(0, 0)
+    except (AttributeError, OSError):
+        return False
+    return True
+
+
+def end_process_tree(own_group: bool) -> None:
+    """Ends the pool's worker processes of a server that is stopping.
+
+    Workers are children of the server: left alone they go on parsing their file
+    when it stops, and one that is just being started would be missed by any list
+    of them. With a process group of our own (`lead_process_group`) the whole group
+    is ended in one go, workers started a moment ago included. Without a group the
+    workers known to multiprocessing are terminated.
+
+    The group signal reaches this process too. From the main thread (the server
+    stopped by itself) SIGTERM is ignored first, so the process leaves normally.
+    From any other thread (the forced exit, run by a timer) the handler cannot be
+    changed, and a SIGTERM aimed at the group would race with the exit that
+    follows: SIGKILL ends the group and this process at one instant, which is what
+    a forced exit is for. The exit status of that process is then "killed".
+    """
+    if own_group:
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            os.killpg(os.getpgrp(), signal.SIGTERM)
+        else:
+            os.killpg(os.getpgrp(), signal.SIGKILL)
+        return
+    for child in multiprocessing.active_children():
+        child.terminate()
+
+
+def _force_exit(own_group: bool = False) -> None:
+    logging.shutdown()
+    end_process_tree(own_group)
+    os._exit(0)
+
+
+def watch_stdin(server: uvicorn.Server, stdin=None, force_exit=_force_exit,
+                own_group: bool = False) -> threading.Thread | None:
+    """Asks `server` to stop when stdin reaches its end or a `shutdown` line arrives.
+
+    If the server is still running FORCE_EXIT_SECONDS later, `force_exit` ends the process.
+    """
+    stdin = sys.stdin if stdin is None else stdin
+    if stdin is None:
+        return None
+
+    def run():
+        try:
+            for line in stdin:
+                if line.strip() == SHUTDOWN_COMMAND:
+                    break
+        except (OSError, ValueError):
+            pass  # a closed or broken pipe means the same as the end of it
+        logger.info("Stopping: the desktop application asked for it or is gone.")
+        server.should_exit = True
+        timer = threading.Timer(FORCE_EXIT_SECONDS, force_exit, args=(own_group,))
+        timer.daemon = True
+        timer.start()
+
+    thread = threading.Thread(target=run, name="stdin-watch", daemon=True)
+    thread.start()
+    return thread
+
+
+def main(environ=None) -> None:
+    """Runs the API until it is stopped."""
+    environ = os.environ if environ is None else environ
+    sock = bind_socket(listen_port(environ))
+    # No access log: every request line would carry its query string, which
+    # can hold a folder of the user (the path check), and the page asks for
+    # the health check twice a second while it waits.
+    server_config = uvicorn.Config(app, access_log=False)
+    applog.scrub_uvicorn_logs()
+    server = _Server(server_config)
+    under_shell = environ.get(STDIN_EOF_ENV) == "1"
+    own_group = lead_process_group() if under_shell else False
+    if under_shell:
+        watch_stdin(server, own_group=own_group)
+    server.run(sockets=[sock])
+    if under_shell:
+        # Stopped in the middle of a calculation: its workers must not outlive the server.
+        end_process_tree(own_group)
+
+
 if __name__ == "__main__":
     # Needed so the ETL process pool works in the frozen (PyInstaller) sidecar.
     multiprocessing.freeze_support()
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    main()

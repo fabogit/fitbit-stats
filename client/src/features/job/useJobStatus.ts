@@ -2,21 +2,12 @@ import { useEffect } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { useAppDispatch } from "@/store/store";
 import { openStatusSocket, waitForServer } from "@/lib/api";
+import { sleepUntilServerReady } from "@/lib/desktopServer";
 import { loadJobStatus } from "./jobApi";
 import { snapshotReceived, type JobSnapshot } from "./jobSlice";
 
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 10_000;
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
-}
 
 /**
  * Keeps `state.job` in step with the server, for the whole life of the app.
@@ -65,7 +56,8 @@ export function useJobStatus() {
           console.warn("Job status unavailable:", e);
         }
         socket = null;
-        await sleep(delay, signal);
+        // A restarted desktop server cuts the wait short: no need to sit out the full delay.
+        await sleepUntilServerReady(delay, signal);
         delay = Math.min(delay * 2, RECONNECT_MAX_MS);
       }
     };

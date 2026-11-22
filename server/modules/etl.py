@@ -1,14 +1,19 @@
 import glob
+import multiprocessing
 import os
+import threading
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 import pandas as pd
+import applog
 from modules import parsers
 from modules.load_plan import LOAD_PLAN
 from modules.sources import Agg, FromSessions, Ratio
 
 
 JSON_FILE = "dashboard_data.json"
+
+logger = applog.get_logger("etl")
 
 
 def filter_by_date(df, start=None, end=None):
@@ -52,6 +57,24 @@ def filter_by_date(df, start=None, end=None):
 MAX_WORKERS = 8
 
 
+def exit_with_parent():
+    """Initializer of the pool workers: a worker ends as soon as the process that started it is gone.
+
+    Without it, workers outlive a server that was stopped or killed (an out-of-memory
+    kill, the desktop application closing it) and keep working on their file, and
+    holding its memory, until they notice that nobody wants the result.
+    """
+    parent = multiprocessing.parent_process()
+    if parent is None:
+        return
+
+    def watch():
+        parent.join()  # returns when the parent ends, however it ends
+        os._exit(0)
+
+    threading.Thread(target=watch, name="parent-watch", daemon=True).start()
+
+
 def _safe_parse(parser_func, path):
     """Run a parser on one file; return (chunk, error) so errors don't abort a batch."""
     try:
@@ -70,10 +93,10 @@ def _parse_files(files, parser_func, parallel=False):
     workers = min(MAX_WORKERS, os.cpu_count() or 1)
     if parallel and workers > 1 and len(files) > workers:
         try:
-            with ProcessPoolExecutor(workers) as pool:
+            with ProcessPoolExecutor(workers, initializer=exit_with_parent) as pool:
                 return list(pool.map(work, files, chunksize=4))
         except Exception as e:
-            print(f"   Process pool unavailable ({e}); parsing sequentially.")
+            logger.warning("Process pool unavailable (%s); parsing sequentially.", type(e).__name__)
     return [work(f) for f in files]
 
 
@@ -201,17 +224,22 @@ def load_collection(data_dir, folder_name, file_pattern, parser_func, warnings=N
     if not files:
         return pd.DataFrame()
 
-    print(f"   Loading {len(files)} files for {file_pattern}...")
+    logger.debug("Loading %d files for %s", len(files), file_pattern)
 
     frames = []
+    skipped = 0
     for f, (chunk, error) in zip(files, _parse_files(files, parser_func, parallel)):
         if error is not None:
             reason = _skip_reason(error, f)
-            print(f"   Skipped {os.path.basename(f)}: {reason}")
+            skipped += 1
+            logger.debug("Skipped %s: %s", os.path.basename(f), reason)
             if warnings is not None:
                 warnings.append({"file": os.path.basename(f), "reason": reason})
         elif chunk is not None and not chunk.empty:
             frames.append(chunk)
+
+    if skipped:
+        logger.info("Skipped %d files of %s", skipped, file_pattern)
 
     if not frames:
         return pd.DataFrame()
@@ -260,8 +288,7 @@ def merge_all_data(data_dir, start=None, end=None, progress_callback=None, warni
     """
     # start / end are applied only when explicitly set; the range of the data
     # itself comes from the merged index, never from file names.
-    date_str = f"{start or 'first day'} to {end or 'last day'}"
-    print(f"\n=== BUILDING MASTER DATASET ({date_str}) ===")
+    logger.info("Building the master dataset")
 
     total = len(LOAD_PLAN)
     datasets = []
@@ -304,7 +331,7 @@ def merge_all_data(data_dir, start=None, end=None, progress_callback=None, warni
         initial = len(master_df)
         master_df = master_df[master_df['calories_total'] > 0]
         if len(master_df) < initial:
-            print(f"   -> Cleaned {initial - len(master_df)} empty rows.")
+            logger.info("Cleaned %d empty rows.", initial - len(master_df))
 
     return master_df
 

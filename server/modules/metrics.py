@@ -2,13 +2,16 @@ import pandas as pd
 import numpy as np
 from typing import Literal
 
+import applog
 from modules.run_config import Profile
+
+logger = applog.get_logger("metrics")
 
 
 def calculate_readiness(df):
     """ Calculates Z-Score based Readiness. """
     if 'overall_score' not in df.columns or 'resting_bpm' not in df.columns:
-        print("Warning: Missing Sleep or RHR columns for Readiness.")
+        logger.warning("Missing sleep or resting heart rate columns for readiness.")
         return df
 
     sleep_z = (df['overall_score'] - df['overall_score'].mean()
@@ -52,7 +55,7 @@ def calculate_metabolic_metrics(df, profile: Profile | None):
             df['bmr'] = (10 * df['weight_filled']) + \
                 (6.25 * profile.height_cm) - (5 * age_series) + s
         except Exception as e:
-            print(f"BMR Error: {e}")
+            logger.warning("BMR could not be calculated (%s)", type(e).__name__)
             df['bmr'] = 0.0
 
         # 3. Active Calories

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "./store/store";
 import {
   fetchHealthData,
@@ -6,6 +6,7 @@ import {
   selectHasFilteredData,
 } from "./features/dashboard/dashboardSlice";
 import { apiFetch, waitForServer } from "@/lib/api";
+import { restartServer, useDesktopServer, useLogLocation } from "@/lib/desktopServer";
 import { loadJobStatus } from "./features/job/jobApi";
 import { useJobStatus } from "./features/job/useJobStatus";
 import { Sidebar } from "./components/dashboard/Sidebar";
@@ -22,6 +23,7 @@ import { DataErrorState } from "./components/dashboard/DataErrorState";
 import { Header } from "./components/dashboard/Header";
 import { LandingPage } from "./components/onboarding/LandingPage";
 import { StartupScreen } from "./components/dashboard/StartupScreen";
+import { ServerBanner } from "./components/dashboard/ServerBanner";
 import { NoticeRegion } from "./components/ui/notice";
 
 /** Where the start sequence is: waiting for the server, failed, first run, or the dashboard. */
@@ -44,6 +46,25 @@ function App() {
 
   // Keeps state.job in step with the server for the whole life of the app.
   useJobStatus();
+
+  // The desktop shell's report on the server (null in the web build). Until the page
+  // has started, a server that failed gets a screen of its own; later, a banner.
+  const server = useDesktopServer();
+  const serverState = server?.info?.state;
+  const startFailed = serverState === "failed" && (startup === "starting" || startup === "unreachable");
+  const logPath = useLogLocation(startFailed);
+
+  // A server that is ready while the start has given up on it (it was restarted by hand, or
+  // became ready in the last moment): start again, once for each ready server, so a server
+  // that is ready but whose answers fail does not make the start loop.
+  const readyGeneration = serverState === "ready" ? server?.info?.generation : undefined;
+  const retriedFor = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (readyGeneration !== undefined && startup === "unreachable" && retriedFor.current !== readyGeneration) {
+      retriedFor.current = readyGeneration;
+      setStartAttempt((n) => n + 1);
+    }
+  }, [readyGeneration, startup]);
 
   // Start sequence, the same on desktop and web: wait for the server, read the
   // job status, read the configuration, then load the data. The first-run page
@@ -99,6 +120,18 @@ function App() {
   };
 
   const renderContent = () => {
+    if (startFailed) {
+      return (
+        <StartupScreen
+          kind="failed"
+          message={server?.info?.message}
+          logPath={logPath}
+          onRetry={() => setStartAttempt((n) => n + 1)}
+          onRestart={() => void restartServer().catch(console.error)}
+        />
+      );
+    }
+
     if (startup === "starting" || startup === "unreachable") {
       return <StartupScreen kind={startup} onRetry={() => setStartAttempt((n) => n + 1)} />;
     }
@@ -181,6 +214,7 @@ function App() {
   return (
     <>
       {renderContent()}
+      {!startFailed && <ServerBanner />}
       <NoticeRegion />
     </>
   );

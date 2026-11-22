@@ -86,6 +86,9 @@ jobs:
           cat > "$RUNNER_TEMP/smoke_sidecar.py" <<'PY'
           """Start the server sidecar found under ROOT and wait for /api/health.
 
+          The sidecar picks a free port itself (FITSTATS_PORT=0) and says which on
+          the FITSTATS_READY line of its output, which is where this reads it.
+
           usage: smoke_sidecar.py ROOT [--reference DIR] [--allow-missing PATH ...]
 
           ROOT is a folder searched for fitstats-server/fitstats-server[.exe]
@@ -104,17 +107,29 @@ jobs:
           import time
           import urllib.request
 
-          URL = "http://127.0.0.1:8000/api/health"
+          READY = "FITSTATS_READY "
           NAME = "fitstats-server.exe" if os.name == "nt" else "fitstats-server"
           OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-          def healthy():
+          def healthy(port):
               try:
-                  with OPENER.open(URL, timeout=2) as r:
+                  with OPENER.open(f"http://127.0.0.1:{port}/api/health", timeout=2) as r:
                       return r.status == 200 and json.load(r) == {"status": "ok"}
               except Exception:
                   return False
+
+
+          def ready_port(log_path):
+              """The port of the FITSTATS_READY line in the sidecar output, if it has been printed."""
+              with open(log_path, errors="replace") as f:
+                  for line in f:
+                      if line.startswith(READY):
+                          try:
+                              return int(json.loads(line[len(READY):])["port"])
+                          except (ValueError, KeyError, TypeError):
+                              return None
+              return None
 
 
           def find_exe(root):
@@ -172,11 +187,9 @@ jobs:
                   print(f"files missing from the bundle: {len(missing)}")
                   if missing:
                       sys.exit("missing: " + ", ".join(missing[:20]))
-              if healthy():
-                  sys.exit("something already answers on port 8000; the test would prove nothing")
 
               log = tempfile.NamedTemporaryFile(prefix="sidecar-", suffix=".log", delete=False)
-              env = dict(os.environ, FITSTATS_API_TOKEN="0" * 64)
+              env = dict(os.environ, FITSTATS_API_TOKEN="0" * 64, FITSTATS_PORT="0")
               proc = subprocess.Popen([exe], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
               started = time.monotonic()
               ok = False
@@ -184,7 +197,8 @@ jobs:
                   while time.monotonic() - started < 60:
                       if proc.poll() is not None:
                           break
-                      if healthy():
+                      port = ready_port(log.name)
+                      if port is not None and healthy(port):
                           ok = True
                           break
                       time.sleep(0.2)
@@ -198,7 +212,7 @@ jobs:
                   print("--- sidecar output ---")
                   print(open(log.name, errors="replace").read())
                   sys.exit(f"no healthy response (exit code {proc.returncode})")
-              print(f"/api/health answered 200 after {elapsed:.1f} s")
+              print(f"port {port}: /api/health answered 200 after {elapsed:.1f} s")
 
 
           if __name__ == "__main__":
@@ -345,6 +359,103 @@ jobs:
           nsis=$(ls "$bundle"/nsis/*.exe)
           7z x -y "-o$RUNNER_TEMP/nsis-root" "$nsis" > /dev/null
           python "$RUNNER_TEMP/smoke_sidecar.py" "$RUNNER_TEMP/nsis-root" --reference server/dist/fitstats-server
+
+      # The installers are installed and the application is started from where it was installed:
+      # this runs the whole path (the shell starts the server, learns its port from the handshake
+      # and writes it to the log) that the tests above do not. The port is found in the application
+      # log, "sidecar ready on port N". Then the application is closed the normal way and no
+      # server process may be left.
+      - name: Write the installed application test (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/app_smoke.ps1" <<'PS'
+          # usage: app_smoke.ps1 <label>   (the application is installed already)
+          param([string]$Label)
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:LOCALAPPDATA 'com.fitstats\logs\FitStats.log'
+          $dir = @("$env:ProgramFiles\FitStats", "$env:LOCALAPPDATA\FitStats", "$env:LOCALAPPDATA\Programs\FitStats") |
+            Where-Object { Test-Path (Join-Path $_ 'fitstats-server\fitstats-server.exe') } | Select-Object -First 1
+          if (-not $dir) { throw "${Label}: no installed FitStats folder with the server found" }
+          Write-Host "${Label}: installed in $dir"
+          Get-ChildItem $dir | ForEach-Object { Write-Host "  $($_.Name)" }
+          $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notlike 'uninstall*' } | Select-Object -First 1
+          if (-not $exe) { throw "${Label}: no application executable in $dir" }
+          if (Test-Path $log) { Remove-Item $log -Force }
+          $app = Start-Process $exe.FullName -PassThru
+          $port = $null
+          $started = Get-Date
+          while (((Get-Date) - $started).TotalSeconds -lt 60 -and -not $port) {
+            if ($app.HasExited) { throw "${Label}: the application exited with code $($app.ExitCode)" }
+            if (Test-Path $log) {
+              $m = Select-String -Path $log -Pattern 'sidecar ready on port (\d+)' | Select-Object -Last 1
+              if ($m) { $port = $m.Matches[0].Groups[1].Value }
+            }
+            Start-Sleep -Milliseconds 300
+          }
+          if (-not $port) { if (Test-Path $log) { Get-Content $log }; throw "${Label}: no 'sidecar ready' line in the log within 60 s" }
+          $ok = $false
+          while (((Get-Date) - $started).TotalSeconds -lt 60 -and -not $ok) {
+            try { $ok = (Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$port/api/health" -TimeoutSec 2).StatusCode -eq 200 } catch { Start-Sleep -Milliseconds 300 }
+          }
+          if (-not $ok) { Get-Content $log; throw "${Label}: /api/health on port $port did not answer 200" }
+          Write-Host ("{0}: port {1}, health 200 after {2:N1} s" -f $Label, $port, ((Get-Date) - $started).TotalSeconds)
+          if (-not $app.CloseMainWindow()) { Get-Content $log; throw "${Label}: the application has no window to close" }
+          if (-not $app.WaitForExit(20000)) { $app.Kill(); throw "${Label}: the application did not exit within 20 s of being closed" }
+          $limit = (Get-Date).AddSeconds(10)
+          while ((Get-Process -Name fitstats-server -ErrorAction SilentlyContinue) -and (Get-Date) -lt $limit) { Start-Sleep -Milliseconds 200 }
+          $left = @(Get-Process -Name fitstats-server -ErrorAction SilentlyContinue)
+          if ($left.Count -gt 0) { $left | Stop-Process -Force; throw "${Label}: $($left.Count) fitstats-server process(es) left after closing" }
+          Write-Host "${Label}: closed normally, no server process left"
+          PS
+
+      - name: Start the installed application (Windows, MSI then NSIS)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          bundle=client/src-tauri/target/release/bundle
+          script=$(cygpath -w "$RUNNER_TEMP/app_smoke.ps1")
+          msi=$(cygpath -w "$(ls "$bundle"/msi/*.msi)")
+          nsis=$(cygpath -w "$(ls "$bundle"/nsis/*.exe)")
+          # The MSI first, removed again, then the NSIS installer.
+          powershell -NoProfile -Command "\$p = Start-Process msiexec -ArgumentList '/i','$msi','/qn','/norestart' -Wait -PassThru; exit \$p.ExitCode"
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$script" MSI
+          powershell -NoProfile -Command "\$p = Start-Process msiexec -ArgumentList '/x','$msi','/qn','/norestart' -Wait -PassThru; exit \$p.ExitCode"
+          powershell -NoProfile -Command "\$p = Start-Process '$nsis' -ArgumentList '/S' -Wait -PassThru; exit \$p.ExitCode"
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$script" NSIS
+
+      - name: Start the installed application (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          app=$PWD/client/src-tauri/target/release/bundle/macos/FitStats.app
+          log="$HOME/Library/Logs/com.fitstats/FitStats.log"
+          rm -f "$log"
+          "$app/Contents/MacOS/app" > "$RUNNER_TEMP/app-stdout.log" 2>&1 &
+          pid=$!
+          port=""
+          for _ in $(seq 1 200); do
+            kill -0 "$pid" 2>/dev/null || { echo "the application exited"; cat "$RUNNER_TEMP/app-stdout.log"; exit 1; }
+            port=$(grep -o 'sidecar ready on port [0-9]*' "$log" 2>/dev/null | tail -1 | awk '{print $5}' || true)
+            [ -n "$port" ] && break
+            sleep 0.3
+          done
+          [ -n "$port" ] || { echo "no 'sidecar ready' line in the log within 60 s"; cat "$log" 2>/dev/null; cat "$RUNNER_TEMP/app-stdout.log"; exit 1; }
+          ok=""
+          for _ in $(seq 1 200); do
+            [ "$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$port/api/health")" = "200" ] && ok=1 && break
+            sleep 0.3
+          done
+          [ -n "$ok" ] || { cat "$log"; echo "/api/health on port $port did not answer 200"; exit 1; }
+          echo "port $port: /api/health answered 200"
+          osascript -e 'tell application id "com.fitstats" to quit'
+          for _ in $(seq 1 100); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
+          if kill -0 "$pid" 2>/dev/null; then kill "$pid"; echo "the application did not exit after quit"; exit 1; fi
+          for _ in $(seq 1 50); do pgrep -x fitstats-server >/dev/null || break; sleep 0.2; done
+          if pgrep -x fitstats-server >/dev/null; then pkill -x fitstats-server; echo "a server process was left after closing"; exit 1; fi
+          echo "closed normally, no server process left"
 
   publish-release:
     # Runs only if every job of the build matrix succeeded; otherwise the release stays a draft.
