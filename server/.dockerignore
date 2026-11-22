@@ -1,0 +1,41 @@
+# Keep host-only files out of the build context. The image needs the API
+# sources (api.py, config.py, jobs.py, main.py, modules/) and nothing else.
+
+# Python caches and virtual environments
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+.coverage
+.venv
+venv
+env
+*.egg-info
+
+# PyInstaller output (desktop sidecar)
+build
+dist
+
+# Local data and environment files (data and output are mounted at run time)
+data
+shared
+.env
+.env.*
+**/*.csv
+dashboard_data.json
+
+# Not used at run time: the image installs only requirements.txt (no pytest,
+# no ruff), and the spec file is for the desktop sidecar build
+tests
+pytest.ini
+ruff.toml
+requirements-dev.txt
+fitstats-server.spec
+
+# Editors, OS and logs
+.vscode
+.idea
+**/.DS_Store
+**/Thumbs.db
+**/*.log
