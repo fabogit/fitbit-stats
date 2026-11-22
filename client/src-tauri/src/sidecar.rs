@@ -231,24 +231,65 @@ impl Supervisor {
     self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
   }
 
-  /// Publishes `info` unless a newer generation has started since.
-  fn publish(&self, app: &AppHandle, info: ServerInfo) {
-    if info.generation != self.lock().generation {
-      return;
+  // The three methods below change the generation and the published state together, under the
+  // `inner` lock, and hand the new state to `emit` before the lock is released: a report about
+  // an old generation can never overwrite a newer one, and events leave in the order of the changes.
+
+  /// Publishes `info` if it belongs to the current generation. True if it was written.
+  fn publish(&self, emit: &dyn Fn(ServerInfo), info: ServerInfo) -> bool {
+    let inner = self.lock();
+    if info.generation != inner.generation {
+      return false;
     }
     self.state.send_replace(info.clone());
-    let _ = app.emit(STATE_EVENT, info);
+    emit(info);
+    true
   }
 
   /// Starts a new generation: `Starting` is published and the number is returned.
-  fn next_generation(&self, app: &AppHandle) -> u64 {
-    let generation = {
-      let mut inner = self.lock();
-      inner.generation += 1;
-      inner.generation
+  fn next_generation(&self, emit: &dyn Fn(ServerInfo)) -> u64 {
+    let mut inner = self.lock();
+    inner.generation += 1;
+    let info = ServerInfo::starting(inner.generation);
+    self.state.send_replace(info.clone());
+    emit(info);
+    inner.generation
+  }
+
+  /// The server of `generation` said it is ready. Ignored if that generation is over, or has
+  /// been given up on already.
+  fn mark_ready(&self, emit: &dyn Fn(ServerInfo), generation: u64, port: u16) -> bool {
+    let mut inner = self.lock();
+    let starting = {
+      let current = self.state.borrow();
+      current.generation == generation && current.state == Phase::Starting
     };
-    self.publish(app, ServerInfo::starting(generation));
-    generation
+    if inner.generation != generation || !starting {
+      return false;
+    }
+    inner.policy.on_ready();
+    let info = ServerInfo::ready(generation, port);
+    self.state.send_replace(info.clone());
+    emit(info);
+    true
+  }
+
+  /// The start of `generation` took too long: if it is still starting (not ready, not replaced
+  /// by a newer one), it is marked failed, and its process is handed back to be ended.
+  /// `None` when nothing was done.
+  fn give_up_start(&self, emit: &dyn Fn(ServerInfo), generation: u64, message: &str) -> Option<Option<Running>> {
+    let mut inner = self.lock();
+    let starting = {
+      let current = self.state.borrow();
+      current.generation == generation && current.state == Phase::Starting
+    };
+    if inner.generation != generation || !starting {
+      return None;
+    }
+    let info = ServerInfo::failed(generation, message.to_string());
+    self.state.send_replace(info.clone());
+    emit(info);
+    Some(inner.running.take())
   }
 
   /// Called when the application is closing: asks the server to stop, and kills it
@@ -262,6 +303,13 @@ impl Supervisor {
     if let Some(running) = running {
       stop_running(running);
     }
+  }
+}
+
+/// What goes to the webview at every change of the state.
+fn emitter(app: &AppHandle) -> impl Fn(ServerInfo) + '_ {
+  move |info| {
+    let _ = app.emit(STATE_EVENT, info);
   }
 }
 
@@ -295,7 +343,7 @@ pub fn restart_server(app: AppHandle) {
     // Its exit is not news: the generation it belongs to is over.
     std::thread::spawn(move || stop_running(old));
   }
-  let generation = supervisor.next_generation(&app);
+  let generation = supervisor.next_generation(&emitter(&app));
   spawn_generation(&app, generation);
 }
 
@@ -308,7 +356,7 @@ pub fn log_location(app: AppHandle) -> Result<String, String> {
 
 /// Starts the sidecar (generation 1). Called once, from the application setup.
 pub fn start(app: &AppHandle) {
-  let generation = app.state::<Supervisor>().next_generation(app);
+  let generation = app.state::<Supervisor>().next_generation(&emitter(app));
   spawn_generation(app, generation);
 }
 
@@ -341,7 +389,7 @@ fn spawn_generation(app: &AppHandle, generation: u64) {
     Ok(path) => path,
     Err(e) => {
       log::error!("cannot locate the server: {e}");
-      supervisor.publish(app, ServerInfo::failed(generation, "The server program was not found.".into()));
+      supervisor.publish(&emitter(app), ServerInfo::failed(generation, "The server program was not found.".into()));
       return;
     }
   };
@@ -364,7 +412,7 @@ fn spawn_generation(app: &AppHandle, generation: u64) {
     Ok(spawned) => spawned,
     Err(e) => {
       log::error!("cannot start the server: {e}");
-      supervisor.publish(app, ServerInfo::failed(generation, describe_spawn_error(&e)));
+      supervisor.publish(&emitter(app), ServerInfo::failed(generation, describe_spawn_error(&e)));
       return;
     }
   };
@@ -376,7 +424,13 @@ fn spawn_generation(app: &AppHandle, generation: u64) {
       let _ = child.kill();
       return;
     }
-    inner.running = Some(Running { child, exited: exited.clone() });
+    // Nothing should be here; if something is, it must not be left running unseen.
+    let replaced = inner.running.replace(Running { child, exited: exited.clone() });
+    drop(inner);
+    if let Some(old) = replaced {
+      log::warn!("a server process was still registered; stopping it");
+      std::thread::spawn(move || stop_running(old));
+    }
   }
   tauri::async_runtime::spawn(watch_events(app.clone(), generation, rx, exited));
   tauri::async_runtime::spawn(watch_start_timeout(app.clone(), generation));
@@ -395,6 +449,7 @@ async fn watch_events(
   let mut stdout = Forwarder::new(log::Level::Info, home.clone());
   let mut stderr = Forwarder::new(log::Level::Warn, home);
   let mut ready = false;
+  let mut terminated = false;
   while let Some(event) = rx.recv().await {
     let supervisor = app.state::<Supervisor>();
     match event {
@@ -402,8 +457,7 @@ async fn watch_events(
         Some(port) if !ready => {
           ready = true;
           log::info!(target: "sidecar", "sidecar ready on port {port}");
-          supervisor.lock().policy.on_ready();
-          supervisor.publish(&app, ServerInfo::ready(generation, port));
+          supervisor.mark_ready(&emitter(&app), generation, port);
         }
         _ => stdout.forward(&bytes),
       },
@@ -412,11 +466,28 @@ async fn watch_events(
       CommandEvent::Terminated(payload) => {
         exited.store(true, Ordering::SeqCst);
         log::warn!(target: "sidecar", "sidecar exited (code {:?}, signal {:?})", payload.code, payload.signal);
+        terminated = true;
         on_exit(&app, generation, ready, describe_exit(payload.code, payload.signal, ready));
         break;
       }
       _ => {}
     }
+  }
+  if !terminated {
+    // The channel closed without a word about the exit (waiting for the process failed): the
+    // server is gone or cannot be watched any more. End it if it is still there, and treat it
+    // as an exit, so the state never says "ready" about a server nobody watches.
+    log::error!(target: "sidecar", "lost track of the sidecar");
+    exited.store(true, Ordering::SeqCst);
+    let supervisor = app.state::<Supervisor>();
+    let running = {
+      let mut inner = supervisor.lock();
+      if inner.generation == generation { inner.running.take() } else { None }
+    };
+    if let Some(running) = running {
+      let _ = running.child.kill();
+    }
+    on_exit(&app, generation, ready, describe_exit(None, None, ready));
   }
 }
 
@@ -440,7 +511,7 @@ fn on_exit(app: &AppHandle, generation: u64, was_ready: bool, reason: String) {
   match decision {
     Decision::Restart(delay) => {
       log::warn!("restarting the server in {} s", delay.as_secs());
-      let next = supervisor.next_generation(app);
+      let next = supervisor.next_generation(&emitter(app));
       let app = app.clone();
       tauri::async_runtime::spawn(async move {
         tokio::time::sleep(delay).await;
@@ -456,7 +527,7 @@ fn on_exit(app: &AppHandle, generation: u64, was_ready: bool, reason: String) {
     }
     Decision::GiveUp => {
       log::error!("giving up on the server: {reason}");
-      supervisor.publish(app, ServerInfo::failed(generation, reason));
+      supervisor.publish(&emitter(app), ServerInfo::failed(generation, reason));
     }
   }
 }
@@ -465,27 +536,24 @@ fn on_exit(app: &AppHandle, generation: u64, was_ready: bool, reason: String) {
 async fn watch_start_timeout(app: AppHandle, generation: u64) {
   tokio::time::sleep(START_TIMEOUT).await;
   let supervisor = app.state::<Supervisor>();
-  let starting = {
-    let state = supervisor.state.borrow();
-    state.generation == generation && state.state == Phase::Starting
-  };
-  if starting {
+  let message = "The server did not answer in 60 seconds.";
+  if let Some(running) = supervisor.give_up_start(&emitter(&app), generation, message) {
     log::error!("the server did not become ready in {} s", START_TIMEOUT.as_secs());
-    supervisor.publish(&app, ServerInfo::failed(generation, "The server did not answer in 60 seconds.".into()));
-    let running = supervisor.lock().running.take();
     if let Some(running) = running {
       let _ = running.child.kill();
     }
   }
 }
 
+/// Whether the process exists, `None` when that could not be found out (the `kill` command did
+/// not run): the caller must not take "unknown" for "gone".
 #[cfg(unix)]
-fn is_alive(pid: u32) -> bool {
+fn is_alive(pid: u32) -> Option<bool> {
   std::process::Command::new("kill")
     .args(["-0", &pid.to_string()])
     .output()
+    .ok()
     .map(|o| o.status.success())
-    .unwrap_or(false)
 }
 
 /// Stops a running sidecar: asks it to stop through its input, waits a few
@@ -502,7 +570,7 @@ fn stop_running(mut running: Running) {
       return;
     }
     #[cfg(unix)]
-    if !is_alive(pid) {
+    if is_alive(pid) == Some(false) {
       return;
     }
     std::thread::sleep(Duration::from_millis(50));
@@ -625,5 +693,82 @@ mod tests {
     assert_eq!(describe_exit(Some(1), None, false), "The server stopped before it was ready (code 1).");
     assert_eq!(describe_exit(None, Some(9), true), "The server stopped (signal 9).");
     assert_eq!(describe_exit(None, None, true), "The server stopped.");
+  }
+
+  /// A supervisor and the list of what it sent to the webview.
+  fn supervisor() -> (Supervisor, std::cell::RefCell<Vec<ServerInfo>>) {
+    (Supervisor::new(), std::cell::RefCell::new(Vec::new()))
+  }
+
+  fn current(supervisor: &Supervisor) -> ServerInfo {
+    supervisor.state.borrow().clone()
+  }
+
+  #[test]
+  fn a_new_generation_is_published_as_starting() {
+    let (sup, sent) = supervisor();
+    let emit = |i: ServerInfo| sent.borrow_mut().push(i);
+    assert_eq!(sup.next_generation(&emit), 1);
+    assert_eq!(sup.next_generation(&emit), 2);
+    assert_eq!(*sent.borrow(), vec![ServerInfo::starting(1), ServerInfo::starting(2)]);
+    assert_eq!(current(&sup), ServerInfo::starting(2));
+  }
+
+  #[test]
+  fn a_report_about_an_old_generation_is_dropped_and_not_sent() {
+    let (sup, sent) = supervisor();
+    let emit = |i: ServerInfo| sent.borrow_mut().push(i);
+    sup.next_generation(&emit);
+    sup.next_generation(&emit);
+    assert!(!sup.publish(&emit, ServerInfo::failed(1, "late".into())));
+    assert!(!sup.mark_ready(&emit, 1, 4000));
+    assert_eq!(current(&sup), ServerInfo::starting(2));
+    assert_eq!(sent.borrow().len(), 2);
+  }
+
+  #[test]
+  fn the_timeout_of_an_old_start_cannot_fail_the_new_one_and_the_new_one_still_fires() {
+    let (sup, sent) = supervisor();
+    let emit = |i: ServerInfo| sent.borrow_mut().push(i);
+    sup.next_generation(&emit);
+    sup.next_generation(&emit); // restarted before the first timer fired
+    assert!(sup.give_up_start(&emit, 1, "slow").is_none());
+    assert_eq!(current(&sup), ServerInfo::starting(2));
+    assert!(sup.give_up_start(&emit, 2, "slow").is_some());
+    assert_eq!(current(&sup), ServerInfo::failed(2, "slow".into()));
+  }
+
+  #[test]
+  fn a_server_that_became_ready_in_time_is_not_failed_by_the_timeout() {
+    let (sup, sent) = supervisor();
+    let emit = |i: ServerInfo| sent.borrow_mut().push(i);
+    sup.next_generation(&emit);
+    assert!(sup.mark_ready(&emit, 1, 4000));
+    assert!(sup.give_up_start(&emit, 1, "slow").is_none());
+    assert_eq!(current(&sup), ServerInfo::ready(1, 4000));
+    assert_eq!(sent.borrow().len(), 2);
+  }
+
+  #[test]
+  fn ready_after_the_timeout_gave_up_is_ignored() {
+    let (sup, sent) = supervisor();
+    let emit = |i: ServerInfo| sent.borrow_mut().push(i);
+    sup.next_generation(&emit);
+    assert!(sup.give_up_start(&emit, 1, "slow").is_some());
+    assert!(!sup.mark_ready(&emit, 1, 4000));
+    assert_eq!(current(&sup), ServerInfo::failed(1, "slow".into()));
+  }
+
+  #[test]
+  fn ready_clears_the_early_try_of_the_policy_only_for_the_current_generation() {
+    let (sup, sent) = supervisor();
+    let emit = |i: ServerInfo| sent.borrow_mut().push(i);
+    sup.next_generation(&emit);
+    sup.lock().policy.on_exit(Instant::now(), false); // the early try is used up
+    sup.next_generation(&emit);
+    assert!(!sup.mark_ready(&emit, 1, 4000)); // an old generation must not reset it
+    assert!(sup.lock().policy.retried_start);
+    assert!(sup.mark_ready(&emit, 2, 4001));
+    assert!(!sup.lock().policy.retried_start);
   }
 }

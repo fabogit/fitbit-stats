@@ -3,7 +3,7 @@ mod sidecar;
 use sidecar::{ApiToken, Supervisor};
 use tauri::{Manager, RunEvent};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
-/// A log file is closed at this size; three files are kept, about 3 MB at most.
+/// A log file is closed at this size; a few older files are kept (the plugin keeps up to three, about 4 MB in all).
 const LOG_FILE_MAX_BYTES: u128 = 1_000_000;
 const LOG_FILES_KEPT: usize = 3;
 
