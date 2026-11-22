@@ -62,7 +62,7 @@ dashboard_data.json
 # ==========================
 # TAURI & RUST (Client Sidecar)
 # ==========================
-client/src-tauri/bin/
+client/src-tauri/sidecar/
 
 # Ai agents
 .agent*

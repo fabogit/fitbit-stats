@@ -80,29 +80,191 @@ jobs:
           pip install pyinstaller==6.22.3
           pyinstaller --clean fitstats-server.spec
 
-      - name: Move Sidecar to Tauri Bin directory
+      - name: Write sidecar smoke test script
         shell: bash
         run: |
-          mkdir -p client/src-tauri/bin
-          # Determine file extension
-          EXT=""
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then EXT=".exe"; fi
+          cat > "$RUNNER_TEMP/smoke_sidecar.py" <<'PY'
+          """Start the server sidecar found under ROOT and wait for /api/health.
 
-          # Move the sidecar with the target triple Tauri expects
-          cp server/dist/fitstats-server$EXT client/src-tauri/bin/fitstats-server-${{ matrix.target }}$EXT
+          usage: smoke_sidecar.py ROOT [--reference DIR] [--allow-missing PATH ...]
 
-          # Secure execution permissions for Unix-like systems (macOS and Linux)
-          if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
-            chmod +x client/src-tauri/bin/fitstats-server-${{ matrix.target }}
+          ROOT is a folder searched for fitstats-server/fitstats-server[.exe]
+          (exactly one match). With --reference, every file and link of DIR
+          (the folder PyInstaller built) must also exist next to the executable:
+          this catches files a bundler skipped or dropped. --allow-missing names
+          a path (relative to the sidecar folder, compared for exact equality)
+          that may be missing, only if it is a link to a folder in DIR.
+          """
+          import argparse
+          import json
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          import time
+          import urllib.request
 
-            # Add ad-hoc signing specially for macOS (Apple Silicon requirement)
-            if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-              codesign --force --sign - client/src-tauri/bin/fitstats-server-${{ matrix.target }}
+          URL = "http://127.0.0.1:8000/api/health"
+          NAME = "fitstats-server.exe" if os.name == "nt" else "fitstats-server"
+          OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+          def healthy():
+              try:
+                  with OPENER.open(URL, timeout=2) as r:
+                      return r.status == 200 and json.load(r) == {"status": "ok"}
+              except Exception:
+                  return False
+
+
+          def find_exe(root):
+              if os.path.isfile(root):
+                  return root
+              found = []
+              for dirpath, _dirs, files in os.walk(root):
+                  if NAME in files and os.path.basename(dirpath) == "fitstats-server":
+                      found.append(os.path.join(dirpath, NAME))
+              if len(found) != 1:
+                  sys.exit(f"expected one fitstats-server/{NAME} under {root}, found {len(found)}: {found}")
+              return found[0]
+
+
+          def missing_files(reference, folder):
+              missing = []
+              for dirpath, dirs, files in os.walk(reference):
+                  rel = os.path.relpath(dirpath, reference)
+                  for entry in dirs + files:
+                      if not os.path.lexists(os.path.normpath(os.path.join(folder, rel, entry))):
+                          missing.append(os.path.normpath(os.path.join(rel, entry)))
+              return missing
+
+
+          def stop(proc):
+              if os.name == "nt":
+                  subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+              else:
+                  proc.terminate()
+              try:
+                  proc.wait(15)
+              except subprocess.TimeoutExpired:
+                  proc.kill()
+                  proc.wait()
+
+
+          def main():
+              parser = argparse.ArgumentParser()
+              parser.add_argument("root")
+              parser.add_argument("--reference")
+              parser.add_argument("--allow-missing", action="append", default=[])
+              args = parser.parse_args()
+
+              exe = os.path.abspath(find_exe(args.root))
+              print(f"sidecar: {exe}")
+              if not os.access(exe, os.X_OK):
+                  sys.exit("the sidecar is not executable")
+              if args.reference:
+                  missing = missing_files(args.reference, os.path.dirname(exe))
+                  for path in list(missing):
+                      source = os.path.join(args.reference, path)
+                      if path in args.allow_missing and os.path.islink(source) and os.path.isdir(source):
+                          print(f"ALLOWED: link to a folder not kept by the bundler ({path})")
+                          missing.remove(path)
+                  print(f"files missing from the bundle: {len(missing)}")
+                  if missing:
+                      sys.exit("missing: " + ", ".join(missing[:20]))
+              if healthy():
+                  sys.exit("something already answers on port 8000; the test would prove nothing")
+
+              log = tempfile.NamedTemporaryFile(prefix="sidecar-", suffix=".log", delete=False)
+              env = dict(os.environ, FITSTATS_API_TOKEN="0" * 64)
+              proc = subprocess.Popen([exe], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+              started = time.monotonic()
+              ok = False
+              try:
+                  while time.monotonic() - started < 60:
+                      if proc.poll() is not None:
+                          break
+                      if healthy():
+                          ok = True
+                          break
+                      time.sleep(0.2)
+                  elapsed = time.monotonic() - started
+                  alive = proc.poll() is None
+              finally:
+                  if proc.poll() is None:
+                      stop(proc)
+                  log.close()
+              if not (ok and alive):
+                  print("--- sidecar output ---")
+                  print(open(log.name, errors="replace").read())
+                  sys.exit(f"no healthy response (exit code {proc.returncode})")
+              print(f"/api/health answered 200 after {elapsed:.1f} s")
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+      - name: Smoke test the built sidecar
+        shell: bash
+        timeout-minutes: 5
+        run: python "$RUNNER_TEMP/smoke_sidecar.py" server/dist
+
+      - name: Write macOS signature check script
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/verify_signatures.sh" <<'SH'
+          # usage: verify_signatures.sh FOLDER
+          # PyInstaller signs every binary it collects (ad hoc). Fail if one is unsigned or invalid.
+          # A framework is signed as a whole bundle, so it is verified as a folder; any other
+          # Mach-O file is verified on its own.
+          #
+          # One exception, written to the log as ALLOWED: the seal of the Python framework
+          # does not match its folder. That is already so in PyInstaller's own output and it
+          # was the same in the previous release; the server starts and answers regardless,
+          # which the smoke tests prove. It is matched as the whole message and only for
+          # _internal/Python.framework; any other message or folder fails.
+          root="${1%/}"
+          fail=0
+          count=0
+          while IFS= read -r -d '' framework; do
+            count=$((count + 1))
+            out=$(codesign --verify --strict "$framework" 2>&1) && continue
+            relative="${framework#"$root"/}"
+            if [ "$relative" = "_internal/Python.framework" ] \
+              && [ "$out" = "$framework: code has no resources but signature indicates they must be present" ]; then
+              echo "ALLOWED: framework signature seal does not match its folder ($relative)"
+            else
+              echo "$out"
+              echo "::error::bad signature: $framework"
+              fail=1
             fi
-          fi
+          done < <(find "$root" -type d -name '*.framework' -prune -print0)
+          while IFS= read -r -d '' f; do
+            case "$f" in *.framework/*) continue ;; esac
+            if file -b "$f" | grep -q 'Mach-O'; then
+              count=$((count + 1))
+              codesign --verify --strict "$f" || { echo "::error::bad signature: $f"; fail=1; }
+            fi
+          done < <(find "$root" -type f -print0)
+          echo "verified $count signed items"
+          [ "$count" -gt 0 ] && [ "$fail" -eq 0 ]
+          SH
 
-          # Verify local copy
-          ls -R client/src-tauri/bin/
+      - name: Verify sidecar signatures (macOS only)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: bash "$RUNNER_TEMP/verify_signatures.sh" server/dist/fitstats-server
+
+      - name: Copy Sidecar to Tauri resources
+        shell: bash
+        run: |
+          # The whole folder is a bundle resource (see tauri.conf.json). cp -a keeps
+          # permissions, signatures and symbolic links as PyInstaller made them.
+          mkdir -p client/src-tauri/sidecar
+          cp -a server/dist/fitstats-server client/src-tauri/sidecar/
+          ls client/src-tauri/sidecar/fitstats-server
 
       - name: Sync version from package.json to tauri.conf.json
         shell: bash
@@ -132,10 +294,63 @@ jobs:
           releaseDraft: true # published by the publish-release job once every platform succeeded
           prerelease: false
 
+      # The installers are built and uploaded to the draft release above. These steps start the
+      # server from inside each one; a failure leaves the release a draft (publish-release is skipped).
+      - name: Smoke test the Linux packages
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          bundle=client/src-tauri/target/release/bundle
+          find "$bundle" -maxdepth 2 | sort
+          deb=$(ls "$bundle"/deb/*.deb)
+          mkdir "$RUNNER_TEMP/deb-root"
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/deb-root"
+          python "$RUNNER_TEMP/smoke_sidecar.py" "$RUNNER_TEMP/deb-root" --reference server/dist/fitstats-server
+
+          appimage=$(ls "$bundle"/appimage/*.AppImage)
+          chmod +x "$appimage"
+          mkdir "$RUNNER_TEMP/appimage-root"
+          (cd "$RUNNER_TEMP/appimage-root" && "$OLDPWD/$appimage" --appimage-extract > /dev/null)
+          python "$RUNNER_TEMP/smoke_sidecar.py" "$RUNNER_TEMP/appimage-root" --reference server/dist/fitstats-server
+
+      - name: Smoke test the macOS bundle
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          app=client/src-tauri/target/release/bundle/macos/FitStats.app
+          res="$app/Contents/Resources/fitstats-server"
+          ls "$res"
+          bash "$RUNNER_TEMP/verify_signatures.sh" "$res"
+          # The bundler copies links to files as files but drops links to folders: the two
+          # inside the Python framework are the only files allowed to be missing.
+          python "$RUNNER_TEMP/smoke_sidecar.py" "$res" --reference server/dist/fitstats-server \
+            --allow-missing _internal/Python.framework/Versions/Current \
+            --allow-missing _internal/Python.framework/Resources
+
+      - name: Smoke test the Windows installers
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          bundle=client/src-tauri/target/release/bundle
+          find "$bundle" -maxdepth 2 | sort
+          # MSI: administrative install, which only unpacks the files.
+          msi=$(cygpath -w "$(ls "$bundle"/msi/*.msi)")
+          target=$(cygpath -w "$RUNNER_TEMP/msi-root")
+          powershell -NoProfile -Command "\$p = Start-Process msiexec -ArgumentList '/a','$msi','/qn','TARGETDIR=$target' -Wait -PassThru; exit \$p.ExitCode"
+          python "$RUNNER_TEMP/smoke_sidecar.py" "$RUNNER_TEMP/msi-root" --reference server/dist/fitstats-server
+          # NSIS: the installer is an archive 7-Zip can open.
+          nsis=$(ls "$bundle"/nsis/*.exe)
+          7z x -y "-o$RUNNER_TEMP/nsis-root" "$nsis" > /dev/null
+          python "$RUNNER_TEMP/smoke_sidecar.py" "$RUNNER_TEMP/nsis-root" --reference server/dist/fitstats-server
+
   publish-release:
     # Runs only if every job of the build matrix succeeded; otherwise the release stays a draft.
+    # Test tags (v0.0.0-test...) are used to try the workflow and never publish anything.
     needs: build-and-release
-    if: ${{ success() }}
+    if: ${{ success() && !startsWith(github.ref_name, 'v0.0.0-test') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

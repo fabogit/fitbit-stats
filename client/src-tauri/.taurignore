@@ -1,0 +1,2 @@
+# The built server sidecar (hundreds of files) must not trigger a rebuild in `tauri dev`.
+/sidecar
