@@ -10,7 +10,7 @@ from modules.run_config import EtlConfig, profile_from_mapping, read_session_con
 
 
 def progress(pct, msg):
-    """Emit a structured progress line for the API to parse and broadcast via WebSocket."""
+    """Print a progress line (PROGRESS:<percent>:<message>) on stdout for the command line."""
     print(f"PROGRESS:{pct}:{msg}", flush=True)
 
 
