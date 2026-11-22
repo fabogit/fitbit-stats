@@ -221,10 +221,9 @@ jobs:
           # Mach-O file is verified on its own.
           #
           # One exception, written to the log as ALLOWED: the seal of the Python framework
-          # does not match its folder. That is already so in PyInstaller's own output (the
-          # seal was made when the framework still had its resource links) and it was the
-          # same in the previous release; the server starts and answers regardless, which
-          # the smoke tests prove. It is matched as the whole message and only for
+          # does not match its folder. That is already so in PyInstaller's own output and it
+          # was the same in the previous release; the server starts and answers regardless,
+          # which the smoke tests prove. It is matched as the whole message and only for
           # _internal/Python.framework; any other message or folder fails.
           root="${1%/}"
           fail=0
