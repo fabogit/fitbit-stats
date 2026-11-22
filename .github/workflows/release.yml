@@ -278,7 +278,7 @@ jobs:
         timeout-minutes: 10
         run: |
           bundle=client/src-tauri/target/release/bundle
-          ls -R "$bundle" | head -40
+          find "$bundle" -maxdepth 2 | sort
           deb=$(ls "$bundle"/deb/*.deb)
           mkdir "$RUNNER_TEMP/deb-root"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/deb-root"
@@ -307,7 +307,7 @@ jobs:
         timeout-minutes: 10
         run: |
           bundle=client/src-tauri/target/release/bundle
-          ls -R "$bundle" | head -20
+          find "$bundle" -maxdepth 2 | sort
           # MSI: administrative install, which only unpacks the files.
           msi=$(cygpath -w "$(ls "$bundle"/msi/*.msi)")
           target=$(cygpath -w "$RUNNER_TEMP/msi-root")
