@@ -1,12 +1,15 @@
 import errno
 import hmac
 import ipaddress
+import logging
 import multiprocessing
 import os
 import json
 import asyncio
+import signal
 import socket
 import sys
+import threading
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import date
@@ -449,6 +452,10 @@ async def health():
 #                  printed once the socket accepts connections. It is the only
 #                  way the shell learns the port.
 #   exit code 3    the port is already in use.
+#   FITSTATS_EXIT_ON_STDIN_EOF=1  stop when stdin closes, or when a line `shutdown`
+#                  arrives on it. The shell holds the other end of the pipe, so the
+#                  server never outlives a shell that crashed or was killed. Only the
+#                  shell sets it: a server run by hand or in Docker ignores stdin.
 #   CLIENT_PUBLIC_DIR the folder for the app's files (session, results, last run);
 #                  the shell passes its own data folder (see config.py).
 
@@ -506,15 +513,96 @@ class _Server(uvicorn.Server):
             print(f"{READY_PREFIX} {json.dumps(ready, separators=(',', ':'))}", flush=True)
 
 
+STDIN_EOF_ENV = "FITSTATS_EXIT_ON_STDIN_EOF"
+SHUTDOWN_COMMAND = "shutdown"
+# After the request to stop, how long a server that is still running is given
+# before it ends itself (a request that never finishes must not keep it alive).
+FORCE_EXIT_SECONDS = 5
+
+
+def lead_process_group() -> bool:
+    """Makes this process the leader of a group of its own; True if it worked.
+
+    The worker processes of the ETL's pool belong to it, which lets `end_process_tree`
+    end them together with the server. Not available on Windows.
+    """
+    try:
+        os.setpgid(0, 0)
+    except (AttributeError, OSError):
+        return False
+    return True
+
+
+def end_process_tree(own_group: bool) -> None:
+    """Ends the pool's worker processes of a server that is stopping.
+
+    Workers are children of the server: left alone they go on parsing their file
+    when it stops, and one that is just being started would be missed by any list
+    of them. With a process group of our own (`lead_process_group`) the whole group
+    is told to end in one go, workers started a moment ago included; this process
+    ignores the signal, since it is on its way out anyway. Without a group the
+    workers known to multiprocessing are terminated.
+    """
+    if own_group:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        os.killpg(os.getpgrp(), signal.SIGTERM)
+        return
+    for child in multiprocessing.active_children():
+        child.terminate()
+
+
+def _force_exit(own_group: bool = False) -> None:
+    end_process_tree(own_group)
+    logging.shutdown()
+    os._exit(0)
+
+
+def watch_stdin(server: uvicorn.Server, stdin=None, force_exit=_force_exit,
+                own_group: bool = False) -> threading.Thread | None:
+    """Asks `server` to stop when stdin reaches its end or a `shutdown` line arrives.
+
+    If the server is still running FORCE_EXIT_SECONDS later, `force_exit` ends the process.
+    """
+    stdin = sys.stdin if stdin is None else stdin
+    if stdin is None:
+        return None
+
+    def run():
+        try:
+            for line in stdin:
+                if line.strip() == SHUTDOWN_COMMAND:
+                    break
+        except (OSError, ValueError):
+            pass  # a closed or broken pipe means the same as the end of it
+        logger.info("Stopping: the desktop application asked for it or is gone.")
+        server.should_exit = True
+        timer = threading.Timer(FORCE_EXIT_SECONDS, force_exit, args=(own_group,))
+        timer.daemon = True
+        timer.start()
+
+    thread = threading.Thread(target=run, name="stdin-watch", daemon=True)
+    thread.start()
+    return thread
+
+
 def main(environ=None) -> None:
     """Runs the API until it is stopped."""
+    environ = os.environ if environ is None else environ
     sock = bind_socket(listen_port(environ))
     # No access log: every request line would carry its query string, which
     # can hold a folder of the user (the path check), and the page asks for
     # the health check twice a second while it waits.
     server_config = uvicorn.Config(app, access_log=False)
     applog.scrub_uvicorn_logs()
-    _Server(server_config).run(sockets=[sock])
+    server = _Server(server_config)
+    under_shell = environ.get(STDIN_EOF_ENV) == "1"
+    own_group = lead_process_group() if under_shell else False
+    if under_shell:
+        watch_stdin(server, own_group=own_group)
+    server.run(sockets=[sock])
+    if under_shell:
+        # Stopped in the middle of a calculation: its workers must not outlive the server.
+        end_process_tree(own_group)
 
 
 if __name__ == "__main__":

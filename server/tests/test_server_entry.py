@@ -1,9 +1,11 @@
 """How the server process starts: the port it picks and how it tells the desktop shell."""
+import io
 import json
 import os
 import socket
 import subprocess
 import sys
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -138,3 +140,67 @@ class TestHandshake:
                 pytest.fail("no ready line")
         finally:
             stop_server(proc)
+
+
+class TestStopFromTheShell:
+    """The shell holds the other end of the server's stdin: closing it, or writing
+    `shutdown`, stops the server; without the variable stdin means nothing."""
+
+    @staticmethod
+    def start_with_stdin(extra_env):
+        env = {k: v for k, v in os.environ.items() if k not in (api.PORT_ENV, api.TOKEN_ENV)}
+        env.update(extra_env, **{api.PORT_ENV: "0", "PYTHONUNBUFFERED": "1"})
+        return subprocess.Popen([sys.executable, str(SERVER_DIR / "api.py")], env=env, cwd=SERVER_DIR,
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True)
+
+    def test_closing_stdin_stops_the_server(self):
+        proc = self.start_with_stdin({api.STDIN_EOF_ENV: "1"})
+        try:
+            read_ready(proc)
+            proc.stdin.close()
+            assert proc.wait(30) == 0
+        finally:
+            stop_server(proc)
+
+    def test_a_shutdown_line_stops_the_server_while_stdin_stays_open(self):
+        proc = self.start_with_stdin({api.STDIN_EOF_ENV: "1"})
+        try:
+            read_ready(proc)
+            proc.stdin.write("something else\nshutdown\n")
+            proc.stdin.flush()
+            assert proc.wait(30) == 0
+        finally:
+            proc.stdin.close()
+            stop_server(proc)
+
+    def test_without_the_variable_stdin_is_ignored(self):
+        proc = self.start_with_stdin({})
+        try:
+            ready = read_ready(proc)
+            proc.stdin.write("shutdown\n")
+            proc.stdin.close()
+            with pytest.raises(subprocess.TimeoutExpired):
+                proc.wait(3)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(f"http://127.0.0.1:{ready['port']}/api/health", timeout=5) as resp:
+                assert resp.status == 200
+        finally:
+            stop_server(proc)
+
+    def test_a_server_that_does_not_stop_in_time_is_ended(self, monkeypatch):
+        """The watcher asks politely first and forces the exit if that does not work."""
+        class Server:
+            should_exit = False
+
+        forced = threading.Event()
+        monkeypatch.setattr(api, "FORCE_EXIT_SECONDS", 0.2)
+        server = Server()
+        api.watch_stdin(server, stdin=io.StringIO("shutdown\n"), force_exit=lambda own_group: forced.set()).join(5)
+        assert server.should_exit is True
+        assert forced.wait(5)
+
+    def test_end_of_input_counts_as_a_request_to_stop(self):
+        server = type("Server", (), {"should_exit": False})()
+        api.watch_stdin(server, stdin=io.StringIO(""), force_exit=lambda own_group: None).join(5)
+        assert server.should_exit is True

@@ -13,8 +13,9 @@
 //!   (its own data folder), so both always mean the same folder.
 
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager};
 use tauri_plugin_shell::{
   process::{CommandChild, CommandEvent},
@@ -85,6 +86,9 @@ fn parse_ready(line: &str) -> Option<u16> {
   serde_json::from_str::<Handshake>(json).ok().map(|h| h.port).filter(|p| *p != 0)
 }
 
+/// Name of the log file, without `.log` (see `log_plugin` in lib.rs).
+pub const LOG_FILE_NAME: &str = "FitStats";
+
 /// A line of the sidecar is cut to this many characters before it is logged.
 const MAX_LINE_CHARS: usize = 2000;
 
@@ -145,9 +149,69 @@ impl Forwarder {
   }
 }
 
+/// Restarts after an unexpected exit of a server that had been ready: the wait
+/// before each one, and how many are allowed in `RESTART_WINDOW`.
+const RESTART_DELAYS: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(5)];
+const RESTART_WINDOW: Duration = Duration::from_secs(5 * 60);
+/// A server that exits before it was ready gets one more try, after this wait.
+const EARLY_RETRY_DELAY: Duration = Duration::from_secs(1);
+/// On exit the server is asked to stop and given this long before it is killed.
+const STOP_GRACE: Duration = Duration::from_secs(3);
+
+#[derive(Debug, PartialEq, Eq)]
+enum Decision {
+  Restart(Duration),
+  GiveUp,
+}
+
+/// When an unexpected exit of the server is answered with a new start, and when not.
+///
+/// * Before it was ready: it fails the same way every time (a missing library, a
+///   damaged folder), so there is one more try and then it is given up.
+/// * After it was ready: at most two restarts in five minutes, after 1 s and
+///   after 5 s; a server that keeps dying is not restarted forever.
+#[derive(Default)]
+struct RestartPolicy {
+  restarts: Vec<Instant>,
+  retried_start: bool,
+}
+
+impl RestartPolicy {
+  fn on_ready(&mut self) {
+    self.retried_start = false;
+  }
+
+  fn on_exit(&mut self, now: Instant, was_ready: bool) -> Decision {
+    if !was_ready {
+      if self.retried_start {
+        return Decision::GiveUp;
+      }
+      self.retried_start = true;
+      return Decision::Restart(EARLY_RETRY_DELAY);
+    }
+    self.restarts.retain(|t| now.saturating_duration_since(*t) < RESTART_WINDOW);
+    match RESTART_DELAYS.get(self.restarts.len()) {
+      Some(delay) => {
+        self.restarts.push(now);
+        Decision::Restart(*delay)
+      }
+      None => Decision::GiveUp,
+    }
+  }
+}
+
+/// A running sidecar: the handle and a flag that its exit has been seen.
+struct Running {
+  child: CommandChild,
+  exited: Arc<AtomicBool>,
+}
+
 struct Inner {
   generation: u64,
-  child: Option<CommandChild>,
+  running: Option<Running>,
+  /// The application is closing: an exit of the server is expected.
+  stopping: bool,
+  policy: RestartPolicy,
 }
 
 /// The sidecar and its state, managed by the application.
@@ -159,22 +223,45 @@ pub struct Supervisor {
 impl Supervisor {
   pub fn new() -> Self {
     let (state, _) = watch::channel(ServerInfo::starting(0));
-    Self { inner: Mutex::new(Inner { generation: 0, child: None }), state }
+    let inner = Inner { generation: 0, running: None, stopping: false, policy: RestartPolicy::default() };
+    Self { inner: Mutex::new(inner), state }
+  }
+
+  fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
+    self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
   }
 
   /// Publishes `info` unless a newer generation has started since.
   fn publish(&self, app: &AppHandle, info: ServerInfo) {
-    let current = self.inner.lock().map(|i| i.generation).unwrap_or(info.generation);
-    if info.generation != current {
+    if info.generation != self.lock().generation {
       return;
     }
     self.state.send_replace(info.clone());
     let _ = app.emit(STATE_EVENT, info);
   }
 
-  /// Takes the child out of the supervisor, for the exit of the application.
-  pub fn take_child(&self) -> Option<CommandChild> {
-    self.inner.lock().ok().and_then(|mut i| i.child.take())
+  /// Starts a new generation: `Starting` is published and the number is returned.
+  fn next_generation(&self, app: &AppHandle) -> u64 {
+    let generation = {
+      let mut inner = self.lock();
+      inner.generation += 1;
+      inner.generation
+    };
+    self.publish(app, ServerInfo::starting(generation));
+    generation
+  }
+
+  /// Called when the application is closing: asks the server to stop, and kills it
+  /// if it has not after a few seconds.
+  pub fn shutdown(&self) {
+    let running = {
+      let mut inner = self.lock();
+      inner.stopping = true;
+      inner.running.take()
+    };
+    if let Some(running) = running {
+      stop_running(running);
+    }
   }
 }
 
@@ -195,15 +282,33 @@ pub async fn server_endpoint(supervisor: tauri::State<'_, Supervisor>) -> Result
   Ok(info)
 }
 
+/// Starts the server again, whatever state it is in (the button of the failure screens).
+#[tauri::command]
+pub fn restart_server(app: AppHandle) {
+  let supervisor = app.state::<Supervisor>();
+  let old = {
+    let mut inner = supervisor.lock();
+    inner.policy = RestartPolicy::default();
+    inner.running.take()
+  };
+  if let Some(old) = old {
+    // Its exit is not news: the generation it belongs to is over.
+    std::thread::spawn(move || stop_running(old));
+  }
+  let generation = supervisor.next_generation(&app);
+  spawn_generation(&app, generation);
+}
+
+/// Full path of the log file, for the screens that tell the user where it is.
+#[tauri::command]
+pub fn log_location(app: AppHandle) -> Result<String, String> {
+  let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+  Ok(dir.join(format!("{LOG_FILE_NAME}.log")).to_string_lossy().into_owned())
+}
+
 /// Starts the sidecar (generation 1). Called once, from the application setup.
 pub fn start(app: &AppHandle) {
-  let generation = {
-    let supervisor = app.state::<Supervisor>();
-    let mut inner = supervisor.inner.lock().expect("sidecar state poisoned");
-    inner.generation += 1;
-    inner.generation
-  };
-  app.state::<Supervisor>().publish(app, ServerInfo::starting(generation));
+  let generation = app.state::<Supervisor>().next_generation(app);
   spawn_generation(app, generation);
 }
 
@@ -217,6 +322,16 @@ fn describe_spawn_error(error: &tauri_plugin_shell::Error) -> String {
       _ => format!("The server program could not be run ({}).", e.kind()),
     },
     _ => "The server program could not be run.".into(),
+  }
+}
+
+/// How an exit of the server is told to the user.
+fn describe_exit(code: Option<i32>, signal: Option<i32>, was_ready: bool) -> String {
+  let what = if was_ready { "stopped" } else { "stopped before it was ready" };
+  match (code, signal) {
+    (Some(code), _) => format!("The server {what} (code {code})."),
+    (None, Some(signal)) => format!("The server {what} (signal {signal})."),
+    _ => format!("The server {what}."),
   }
 }
 
@@ -241,7 +356,10 @@ fn spawn_generation(app: &AppHandle, generation: u64) {
     // The folder this shell calls its data folder; the server keeps its files there.
     // Always set, so a value inherited from the environment never counts (empty
     // means "use your own default" to the server).
-    .env("CLIENT_PUBLIC_DIR", data_dir);
+    .env("CLIENT_PUBLIC_DIR", data_dir)
+    // The server stops when its input closes, which is what happens if this
+    // application dies without a chance to stop it (a crash, a kill).
+    .env("FITSTATS_EXIT_ON_STDIN_EOF", "1");
   let (rx, child) = match command.spawn() {
     Ok(spawned) => spawned,
     Err(e) => {
@@ -250,22 +368,29 @@ fn spawn_generation(app: &AppHandle, generation: u64) {
       return;
     }
   };
-  match supervisor.inner.lock() {
-    Ok(mut inner) if inner.generation == generation => inner.child = Some(child),
-    _ => {
+  let exited = Arc::new(AtomicBool::new(false));
+  {
+    let mut inner = supervisor.lock();
+    if inner.generation != generation || inner.stopping {
+      drop(inner);
       let _ = child.kill();
       return;
     }
+    inner.running = Some(Running { child, exited: exited.clone() });
   }
-  let app = app.clone();
-  tauri::async_runtime::spawn(watch_events(app.clone(), generation, rx));
-  tauri::async_runtime::spawn(watch_start_timeout(app, generation));
+  tauri::async_runtime::spawn(watch_events(app.clone(), generation, rx, exited));
+  tauri::async_runtime::spawn(watch_start_timeout(app.clone(), generation));
 }
 
 /// Reads everything the sidecar says, for as long as it lives. It must never
 /// stop reading: the channel holds one message, and a sidecar whose output is
 /// not taken blocks on its next `print`.
-async fn watch_events(app: AppHandle, generation: u64, mut rx: tauri::async_runtime::Receiver<CommandEvent>) {
+async fn watch_events(
+  app: AppHandle,
+  generation: u64,
+  mut rx: tauri::async_runtime::Receiver<CommandEvent>,
+  exited: Arc<AtomicBool>,
+) {
   let home = app.path().home_dir().ok().map(|p| p.to_string_lossy().into_owned());
   let mut stdout = Forwarder::new(log::Level::Info, home.clone());
   let mut stderr = Forwarder::new(log::Level::Warn, home);
@@ -277,6 +402,7 @@ async fn watch_events(app: AppHandle, generation: u64, mut rx: tauri::async_runt
         Some(port) if !ready => {
           ready = true;
           log::info!(target: "sidecar", "sidecar ready on port {port}");
+          supervisor.lock().policy.on_ready();
           supervisor.publish(&app, ServerInfo::ready(generation, port));
         }
         _ => stdout.forward(&bytes),
@@ -284,16 +410,53 @@ async fn watch_events(app: AppHandle, generation: u64, mut rx: tauri::async_runt
       CommandEvent::Stderr(bytes) => stderr.forward(&bytes),
       CommandEvent::Error(message) => log::error!(target: "sidecar", "{message}"),
       CommandEvent::Terminated(payload) => {
+        exited.store(true, Ordering::SeqCst);
         log::warn!(target: "sidecar", "sidecar exited (code {:?}, signal {:?})", payload.code, payload.signal);
-        let message = match (payload.code, payload.signal) {
-          (Some(code), _) => format!("The server stopped with code {code}."),
-          (None, Some(signal)) => format!("The server was ended by signal {signal}."),
-          _ => "The server stopped.".to_string(),
-        };
-        supervisor.publish(&app, ServerInfo::failed(generation, message));
+        on_exit(&app, generation, ready, describe_exit(payload.code, payload.signal, ready));
         break;
       }
       _ => {}
+    }
+  }
+}
+
+/// The sidecar exited: restarts it or gives up, unless that exit was expected.
+fn on_exit(app: &AppHandle, generation: u64, was_ready: bool, reason: String) {
+  let supervisor = app.state::<Supervisor>();
+  let decision = {
+    let mut inner = supervisor.lock();
+    // The application is closing, or a newer start has replaced this one, or this
+    // one was already given up on (the start timeout).
+    let given_up = {
+      let state = supervisor.state.borrow();
+      state.generation == generation && state.state == Phase::Failed
+    };
+    if inner.stopping || inner.generation != generation || given_up {
+      return;
+    }
+    inner.running = None;
+    inner.policy.on_exit(Instant::now(), was_ready)
+  };
+  match decision {
+    Decision::Restart(delay) => {
+      log::warn!("restarting the server in {} s", delay.as_secs());
+      let next = supervisor.next_generation(app);
+      let app = app.clone();
+      tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(delay).await;
+        let supervisor = app.state::<Supervisor>();
+        let current = {
+          let inner = supervisor.lock();
+          inner.generation == next && !inner.stopping
+        };
+        if current {
+          spawn_generation(&app, next);
+        }
+      });
+    }
+    Decision::GiveUp => {
+      log::error!("giving up on the server: {reason}");
+      supervisor.publish(app, ServerInfo::failed(generation, reason));
     }
   }
 }
@@ -302,43 +465,59 @@ async fn watch_events(app: AppHandle, generation: u64, mut rx: tauri::async_runt
 async fn watch_start_timeout(app: AppHandle, generation: u64) {
   tokio::time::sleep(START_TIMEOUT).await;
   let supervisor = app.state::<Supervisor>();
-  if supervisor.state.borrow().generation == generation && supervisor.state.borrow().state == Phase::Starting {
+  let starting = {
+    let state = supervisor.state.borrow();
+    state.generation == generation && state.state == Phase::Starting
+  };
+  if starting {
     log::error!("the server did not become ready in {} s", START_TIMEOUT.as_secs());
     supervisor.publish(&app, ServerInfo::failed(generation, "The server did not answer in 60 seconds.".into()));
-    if let Some(child) = supervisor.take_child() {
-      let _ = child.kill();
+    let running = supervisor.lock().running.take();
+    if let Some(running) = running {
+      let _ = running.child.kill();
     }
   }
 }
 
-/// Stop the sidecar.
-///
-/// The sidecar is a single process, so a plain termination signal is enough.
-pub fn stop_sidecar(child: CommandChild) {
-  let pid = child.pid().to_string();
-  #[cfg(unix)]
-  {
-    use std::process::Command;
-    let _ = Command::new("kill").args(["-TERM", &pid]).status();
-    for _ in 0..30 {
-      let alive = Command::new("kill").args(["-0", &pid]).output().map(|o| o.status.success()).unwrap_or(false);
-      if !alive {
-        return;
-      }
-      std::thread::sleep(Duration::from_millis(100));
-    }
+#[cfg(unix)]
+fn is_alive(pid: u32) -> bool {
+  std::process::Command::new("kill")
+    .args(["-0", &pid.to_string()])
+    .output()
+    .map(|o| o.status.success())
+    .unwrap_or(false)
+}
+
+/// Stops a running sidecar: asks it to stop through its input, waits a few
+/// seconds, then kills it. On Windows the kill also ends the worker processes
+/// of the server's process pool.
+fn stop_running(mut running: Running) {
+  let pid = running.child.pid();
+  if running.child.write(b"shutdown\n").is_err() {
+    log::warn!("could not ask the server to stop; ending it");
   }
+  let deadline = Instant::now() + STOP_GRACE;
+  while Instant::now() < deadline {
+    if running.exited.load(Ordering::SeqCst) {
+      return;
+    }
+    #[cfg(unix)]
+    if !is_alive(pid) {
+      return;
+    }
+    std::thread::sleep(Duration::from_millis(50));
+  }
+  log::warn!("the server did not stop in {} s; ending it", STOP_GRACE.as_secs());
   #[cfg(windows)]
   {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    // /T also ends the worker processes of the server's process pool.
     let _ = std::process::Command::new("taskkill")
-      .args(["/PID", &pid, "/T", "/F"])
+      .args(["/PID", &pid.to_string(), "/T", "/F"])
       .creation_flags(CREATE_NO_WINDOW)
       .status();
   }
-  let _ = child.kill();
+  let _ = running.child.kill();
 }
 
 #[cfg(test)]
@@ -402,5 +581,49 @@ mod tests {
     let out = tidy(&line, None);
     assert_eq!(out.chars().count(), MAX_LINE_CHARS + 1);
     assert!(out.ends_with('…'));
+  }
+
+  fn after(t0: Instant, secs: u64) -> Instant {
+    t0 + Duration::from_secs(secs)
+  }
+
+  #[test]
+  fn a_server_that_exits_before_ready_gets_one_more_try() {
+    let (mut policy, t0) = (RestartPolicy::default(), Instant::now());
+    assert_eq!(policy.on_exit(t0, false), Decision::Restart(EARLY_RETRY_DELAY));
+    assert_eq!(policy.on_exit(after(t0, 2), false), Decision::GiveUp);
+  }
+
+  #[test]
+  fn ready_clears_the_early_try() {
+    let (mut policy, t0) = (RestartPolicy::default(), Instant::now());
+    assert_eq!(policy.on_exit(t0, false), Decision::Restart(EARLY_RETRY_DELAY));
+    policy.on_ready();
+    assert_eq!(policy.on_exit(after(t0, 10), false), Decision::Restart(EARLY_RETRY_DELAY));
+  }
+
+  #[test]
+  fn a_ready_server_is_restarted_twice_in_five_minutes_after_1_and_5_seconds() {
+    let (mut policy, t0) = (RestartPolicy::default(), Instant::now());
+    assert_eq!(policy.on_exit(t0, true), Decision::Restart(Duration::from_secs(1)));
+    assert_eq!(policy.on_exit(after(t0, 20), true), Decision::Restart(Duration::from_secs(5)));
+    assert_eq!(policy.on_exit(after(t0, 40), true), Decision::GiveUp);
+    assert_eq!(policy.on_exit(after(t0, 299), true), Decision::GiveUp);
+  }
+
+  #[test]
+  fn restarts_older_than_five_minutes_stop_counting() {
+    let (mut policy, t0) = (RestartPolicy::default(), Instant::now());
+    policy.on_exit(t0, true);
+    policy.on_exit(after(t0, 20), true);
+    assert_eq!(policy.on_exit(after(t0, 301), true), Decision::Restart(Duration::from_secs(5)));
+    assert_eq!(policy.on_exit(after(t0, 310), true), Decision::GiveUp);
+  }
+
+  #[test]
+  fn exits_are_told_in_a_few_words() {
+    assert_eq!(describe_exit(Some(1), None, false), "The server stopped before it was ready (code 1).");
+    assert_eq!(describe_exit(None, Some(9), true), "The server stopped (signal 9).");
+    assert_eq!(describe_exit(None, None, true), "The server stopped.");
   }
 }

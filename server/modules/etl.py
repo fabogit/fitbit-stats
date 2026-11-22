@@ -1,5 +1,7 @@
 import glob
+import multiprocessing
 import os
+import threading
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 import pandas as pd
@@ -55,6 +57,24 @@ def filter_by_date(df, start=None, end=None):
 MAX_WORKERS = 8
 
 
+def exit_with_parent():
+    """Initializer of the pool workers: a worker ends as soon as the process that started it is gone.
+
+    Without it, workers outlive a server that was stopped or killed (an out-of-memory
+    kill, the desktop application closing it) and keep working on their file, and
+    holding its memory, until they notice that nobody wants the result.
+    """
+    parent = multiprocessing.parent_process()
+    if parent is None:
+        return
+
+    def watch():
+        parent.join()  # returns when the parent ends, however it ends
+        os._exit(0)
+
+    threading.Thread(target=watch, name="parent-watch", daemon=True).start()
+
+
 def _safe_parse(parser_func, path):
     """Run a parser on one file; return (chunk, error) so errors don't abort a batch."""
     try:
@@ -73,7 +93,7 @@ def _parse_files(files, parser_func, parallel=False):
     workers = min(MAX_WORKERS, os.cpu_count() or 1)
     if parallel and workers > 1 and len(files) > workers:
         try:
-            with ProcessPoolExecutor(workers) as pool:
+            with ProcessPoolExecutor(workers, initializer=exit_with_parent) as pool:
                 return list(pool.map(work, files, chunksize=4))
         except Exception as e:
             logger.warning("Process pool unavailable (%s); parsing sequentially.", type(e).__name__)

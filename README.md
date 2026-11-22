@@ -59,6 +59,20 @@ _(Or drag the app icon into the terminal after typing `xattr -cr `)._ This remov
 
 _(Note: The app remembers your biometrics and folder path securely inside your OS's AppData for subsequent launches!)_
 
+#### 🩺 If the app reports a problem with the local server
+
+The calculations run in a small local server that the app starts for you, on a free port of your own computer. If it stops while the app is open, the app restarts it (at most twice in five minutes) and shows a message at the top of the window; if it cannot, the message offers a **Restart server** button. The same button appears on the start screen if the server could not start at all.
+
+The app keeps a log of what the server says in `FitStats.log`, in the log folder of your system, and the failure messages show its full path:
+
+| System | Log folder |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\com.fitstats\logs` |
+| macOS | `~/Library/Logs/com.fitstats` |
+| Linux | `~/.local/share/com.fitstats/logs` (under `$XDG_DATA_HOME` if it is set) |
+
+A log file is closed at 1 MB and renamed with its date; the current one and the three newest older ones are kept (4 MB at most). The server replaces your home folder and the folders of your export with placeholders in what it writes, but look through the file before you share it. The app's data lives next to it: in the same folder on Linux (`com.fitstats`), under `%APPDATA%\com.fitstats` on Windows and `~/Library/Application Support/com.fitstats` on macOS. On Linux with `XDG_DATA_HOME` set to a folder other than `~/.local/share`, versions before this one kept the data in `~/.local/share/com.fitstats`: the app now follows `XDG_DATA_HOME` and shows the start page once, then calculates again from your export.
+
 ---
 
 ## 🧪 Sample Data
